@@ -1,0 +1,82 @@
+{
+    "purchase_orders": {
+        "PO #": "po_number",
+        "Project": "project_number", 
+        "Machine": "machine_code",
+        "Qty": "ordered_qty",
+        "Internal Part No.": "part_number", 
+        "PO Part No.": "po_part_number", 
+        "Supplier": "vendor_name", 
+        "Price": "unit_price", 
+        "Date Required": "required_date", 
+        "Date Revised": "revised_date",
+        "Last Recd Date": "last_receipt_date",
+        "UOM": "uom", 
+        "Qty Received": "received_qty", 
+        "PO Date": "order_date", 
+        "Ext. Price": "extended_value", 
+        "Currency": "currency_code", 
+        "Curr. Rate": "currency_rate",
+        "Supplier #": "supplier_number",
+        "Order No.": "order_number",
+        "Receiving Date": "receiving_date"
+    },
+    "items": {
+        "Part #": "part_number", 
+        "Description": "description", 
+        "UOM": "uom", 
+        "Category": "category", 
+        "List Price": "list_price", 
+        "Rev #": "revision", 
+        "LPP": "lpp", 
+        "Qty On Hand": "quantity_on_hand", 
+        "Preferred Supplier": "preferred_supplier", 
+        "Supp. Part #": "supplier_part_number", 
+        "Last Supplier": "last_supplier", 
+        "Manufacturer": "manufacturer", 
+        "Manuf. Part #": "manuf_part_number", 
+        "Lead Time": "lead_time", 
+        "Qty Reserved": "quantity_reserved"
+    },
+    "ncrs": {
+        "NC #": "ncr_number", 
+        "Project": "project_number", 
+        "Machine": "machine_code", 
+        "Title": "title", 
+        "Origin": "origin", 
+        "Tasks": "total_tasks", 
+        "Outstanding": "outstanding_tasks", 
+        "Resolved": "resolved", 
+        "Released": "released", 
+        "Source": "source_info", 
+        "PO #": "po_number", 
+        "Part No.": "part_number", 
+        "Qty.": "quantity", 
+        "Qty. Rejected": "quantity_rejected", 
+        "Interim Action": "interim_action", 
+        "Root Cause": "root_cause", 
+        "Corrective & Preventive Action": "corrective_pre_action",
+        "Non-conformance Costs": "ncr_costs", 
+        "Non-conformance Hours": "ncr_hours", 
+        "Target Date": "target_date", 
+        "Date of follow-up": "date_follow_up", 
+        "Created (Date Only)": "created_date",
+        "Supplier": "vendor_name",
+        "Item ID": "item_id" 
+
+
+    }, 
+    "vendors": {
+        "CompanyID": "company_id", 
+        "CName": "vendor_name", 
+        "CAddress1": "address_line_1", 
+        "CAddress2": "address_line_2", 
+        "CCity": "city", 
+        "CState": "state_province", 
+        "CZip": "postal_code", 
+        "CCountry": "country"
+    }
+
+    
+}
+

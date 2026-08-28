@@ -1,0 +1,14 @@
+{
+    "items": {
+        "filename": "ItemMaster.xlsx"
+    }, 
+    "purchase_orders": {"filename": "PO STATUS_TEST.xlsx"
+    },
+    "ncrs": {
+        "filename": "NCR_STATUS.xlsx"
+    },
+    "vendors": {
+        "filename": "Complete Vendors List 1.xlsx"
+    }
+}
+

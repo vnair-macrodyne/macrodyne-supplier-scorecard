@@ -1,0 +1,48 @@
+{
+    "prototype": true,
+
+    "grade_thresholds": {
+        "A": 90,
+        "B": 80,
+        "C": 70,
+        "D": 0
+    },
+
+    "overall": {
+        "minimum_available_components": 3
+    },
+
+    "components": {
+
+        "on_time_delivery": {
+            "label": "On-Time Delivery",
+            "weight": 25,
+            "minimum_sample": 5
+        },
+
+        "quality": {
+            "label": "Quality / NCR",
+            "weight": 25,
+            "minimum_po_transactions": 5,
+            "ncr_rate_penalty_factor": 5
+        },
+
+        "lead_time": {
+            "label": "Lead-Time Performance",
+            "weight": 15,
+            "minimum_sample": 5
+        },
+
+        "responsiveness": {
+            "label": "Responsiveness Proxy",
+            "weight": 15,
+            "minimum_sample": 3
+        },
+
+        "commercial": {
+            "label": "Commercial Performance",
+            "weight": 20,
+            "minimum_sample": 5
+        }
+    }
+}
