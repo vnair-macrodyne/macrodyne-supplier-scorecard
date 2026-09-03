@@ -130,31 +130,32 @@ DERIVED = {
     # poh.CName through unchanged would give every vendor a NULL location, collapse
     # the grain, and match zero NCRs -- silently.
     #
-    # Probe 2 established two things:
+    # The column is CompanyCity. This is worth stating loudly because the obvious
+    # guess is wrong: dbo.udfCompanyRetrieveDisplayNames also returns a column
+    # called "Preferred", and it is a BIT (is-preferred-supplier), not a name.
+    # COALESCE(bit, nvarchar) coerces the bit rather than failing, so reading it
+    # would have made every vendor_name the string "1" -- one vendor row for the
+    # entire scorecard, with nothing raised. Probe 3 caught it as a type error.
     #
-    #   1. dbo.udfCompanyRetrieveDisplayNames(1) IS callable by the reporting
-    #      account, and its "Preferred" column is exactly the string ETO shows:
-    #      "Macrodyne Technologies Inc. [Concord] (Approved)".
+    # Verified 2026-09-03: the function returns exactly 1,701 rows for 1,701
+    # distinct companies (no duplicates, so the join cannot fan out) and covers
+    # every supplier (0 missing).
     #
-    #   2. Rebuilding the string by hand is CLOSE BUT WRONG. A CName + city +
-    #      "(Approved)" reconstruction matched 571 of 578 NCR suppliers and 957 of
-    #      971 receiver-log suppliers. The misses are suppliers whose status is not
-    #      "Approved" -- "Samco Machinery [Toronto] (Inactive)" was rebuilt as
-    #      "Samco Machinery [Toronto]". The suffix is a status, not a boolean.
-    #
-    # So the function is the source and the rebuild is the fallback, in case a
-    # company has no row in it -- a NULL here would make vendor_name null, which
-    # sends the whole line to rejected_purchase_orders.
+    # A hand-rebuild was tried and rejected: CName + city + "(Approved)" matched
+    # 571 of 578 NCR suppliers and 957 of 971 receiver-log suppliers. The misses
+    # are suppliers whose status is not "Approved" -- "Samco Machinery [Toronto]
+    # (Inactive)". The suffix is a status, not a boolean. It survives only as a
+    # fallback for a company absent from the function, because a NULL vendor_name
+    # sends the whole PO line to rejected_purchase_orders.
     "@supplier_display_name": (
-        "COALESCE(disp.Preferred, co.CName"
+        "COALESCE(disp.CompanyCity, co.CName"
         " + CASE WHEN co.CCity IS NULL OR LTRIM(RTRIM(co.CCity)) = ''"
         " THEN '' ELSE ' [' + co.CCity + ']' END)"
     ),
 
     # The same string without the status suffix: "Name [City]".
-    # Kept because it is what a grain keyed on identity rather than status would
-    # want -- a supplier going Approved -> Inactive changes @supplier_display_name
-    # and would split that vendor into two scorecard rows.
+    # The better grain key long-term: a supplier moving Approved -> Inactive
+    # changes @supplier_display_name and would split its own history in two.
     "@supplier_name_no_status": "disp.CompanyCityNoStatus",
 
     # Item lead time, with zero treated as "not set".
