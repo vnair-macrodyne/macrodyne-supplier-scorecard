@@ -2585,7 +2585,10 @@ def _build_vendor_review_sheet(
             "Exact Duplicate",
 
         "review_reason":
-            "Review Reason"
+            "Review Reason",
+
+        "missing_components":
+            "Missing Component / Issue"
     }
 
 

@@ -1,39 +1,83 @@
 from difflib import SequenceMatcher
 
+import pandas as pd
+
 
 def classify_vendor_completeness(vendors_df):
     vendors_df = vendors_df.copy()
+
     required_fields = [
-        "vendor_name", 
-        "address_line_1", 
+        "vendor_name",
+        "address_line_1",
         "postal_code"
     ]
-    missing_value_mask = (
-        vendors_df[required_fields]
-        .isna()
-        .any(axis=1)
-    )
 
-    blank_value_mask = (
+    field_display_names = {
+        "vendor_name": "VENDOR NAME",
+        "address_line_1": "ADDRESS",
+        "postal_code": "POSTAL CODE"
+    }
+
+    # --------------------------------------------------
+    # IDENTIFY MISSING / BLANK VALUES BY FIELD
+    # --------------------------------------------------
+
+    missing_field_mask = (
+        vendors_df[required_fields].isna()
+        |
         vendors_df[required_fields]
         .fillna("")
         .astype(str)
-        .apply(lambda column: column.str.strip())
-        .eq("")
-        .any(axis=1)
+        .apply(
+            lambda column:
+                column.str.strip().eq("")
+        )
     )
-    
-    incomplete_mask = missing_value_mask | blank_value_mask
 
-    vendors_df["vendor_quality_status"] = "COMPLETE"
+    # --------------------------------------------------
+    # OVERALL COMPLETENESS STATUS
+    # --------------------------------------------------
+
+    incomplete_mask = (
+        missing_field_mask.any(axis=1)
+    )
+
+    vendors_df[
+        "vendor_quality_status"
+    ] = "COMPLETE"
 
     vendors_df.loc[
         incomplete_mask,
         "vendor_quality_status"
     ] = "INCOMPLETE"
 
-    return vendors_df
+    # --------------------------------------------------
+    # SPECIFIC MISSING COMPONENTS
+    # --------------------------------------------------
 
+    def get_missing_components(row):
+
+        missing_fields = [
+            field_display_names[field]
+            for field in required_fields
+            if row[field]
+        ]
+
+        if not missing_fields:
+            return None
+
+        return ", ".join(
+            missing_fields
+        )
+
+    vendors_df[
+        "missing_components"
+    ] = missing_field_mask.apply(
+        get_missing_components,
+        axis=1
+    )
+
+    return vendors_df
 
 def identify_exact_duplicates(vendors_df):
     vendors_df = vendors_df.copy()
@@ -266,8 +310,15 @@ def assign_vendor_review_status(vendors_df):
 
     vendors_df.loc[
         incomplete_mask,
-        "review_reason",
-    ] = "MISSING REQUIRED VENDOR DATA"
+        "review_reason"
+    ] = (
+        "MISSING: "
+        +
+        vendors_df.loc[
+            incomplete_mask,
+            "missing_components"
+        ]
+    )
     vendors_df.loc[
         duplicate_mask,
         "review_reason",

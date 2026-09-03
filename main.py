@@ -235,16 +235,27 @@ else:
     print("\nIncomplete Vendor Field Breakdown")
     print("---------------------------------")
 
-    print(
-        incomplete_vendors[
-            [
-                "vendor_name",
-                "address_line_1",
-                "postal_code"
-            ]
-        ]
+    required_vendor_fields = [
+        "vendor_name",
+        "address_line_1",
+        "postal_code"
+    ]
+
+    missing_or_blank = (
+        incomplete_vendors[required_vendor_fields]
         .isna()
-        .sum()
+        |
+        incomplete_vendors[required_vendor_fields]
+        .fillna("")
+        .astype(str)
+        .apply(
+            lambda column:
+                column.str.strip().eq("")
+        )
+    )
+
+    print(
+        missing_or_blank.sum()
     )
 
 
