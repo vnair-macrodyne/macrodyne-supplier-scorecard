@@ -4,7 +4,25 @@
 **Source system:** Total ETO — `Macrodyne_Production` on `MACRO-ETO-SVR\SQLEXPRESS`
 **Access:** `TotalETOReportWriter`, read-only
 **Schema authority:** `ETO_SCHEMA_MAP.md` (verified 2026-07-04 against declared constraints and live join tests)
-**Document date:** 2026-09-03
+**Document date:** 2026-09-03 · **Probe 1 run:** 2026-09-03 against production
+
+---
+
+## What the Probe Settled
+
+The live schema probe answered every column question and overturned three assumptions. In order of consequence:
+
+**1. `vwPurchaseOrderHeader.CName` is the CLEAN company name.** The Excel extract carried the decorated display name — `Bluewater Heater [Oldcastle] (Approved)` — and the scorecard parses the city out of those brackets to form half its grain. Only **1 of 1,701** supplier records has a bracket stored in `tblCompany.CName`; ETO applies the decoration in its display layer. Mapping `vendor_name` to `poh.CName` would have given every vendor a NULL location, collapsed the grain from (name, city) to (name, `None`), and matched zero NCRs — **without raising anything**. §4.1 covers the fix.
+
+**2. The exact-key supplier path reaches 100% of supplier-linked NCRs.** Of 1,941 active NCRs, 578 carry a supplier and 1,363 carry none — and those are *exactly* the same 578 that carry a `PurchaseOrderID`, because ETO derives `SupplierID` from the PO. There is no NCR with a name but no resolvable key. The prototype's 51 unmatched exceptions are an artifact of name parsing, not missing data.
+
+**3. `EstimatedLeadTime` is not empty — and that is a hazard, not a reprieve.** 844 of 87,237 items carry a value, but only **114 are positive**: 730 are a literal `0`. The evaluator accepts any value `>= 0` as a benchmark, so a raw read would judge those lines against a zero-day promise and mark essentially all of them non-adherent — handing affected vendors a Lead-Time D on a 15% weight built entirely on unset data. §10.
+
+Two objects gained a view: **`vwEngItemMaster`** (54 columns, resolves UOM, category and preferred supplier to names) and **`vwProjects`** (41 columns). Both are now used in place of the base tables. `vwSupplier` does not exist.
+
+Every load-bearing column resolved: `PurchaseUOM` on 161,392 of 161,392 lines, `Quantity` on 1,326 of 1,941 NCRs, `QuantityRejected` on 929. `ItemCompanyID` is on the PO detail view directly, so no item-master join is needed. `OrderNumber`, `PurchaseSupplierItem` and `TotalHours` closed the last three unmapped fields.
+
+**What is still open: the scope.** No filter explains any extract except the item master. That is now the only thing standing between here and a reconciliation — §11.
 
 ---
 
@@ -63,7 +81,7 @@ Two rules are in play, and they are not the same rule.
 
 **These queries meet the second rule, not the first.** They read `dbo` views directly, exactly as the Project Console does, and four objects are read as base tables because no view is known to exist for them. Under the framework's own rule the whole thing is non-conformant, not just those four — staging through a Reporting-schema view or cache table is the conformant end state, and it belongs with the persistence work in `docs/DESIGN.md` §15.3 rather than with this migration.
 
-The immediate implication is smaller: prefer a view wherever one exists, and treat the four base-table reads as an open question (V-13), because a view may exist that nobody has looked for.
+The immediate implication is smaller: prefer a view wherever one exists. The probe took that seriously and found two — `vwEngItemMaster` and `vwProjects` — that this document had been reading as base tables. Both are now used. `vwSupplier` does not exist, so `tblCompany` and `tblSupplier` are the only base-table reads that remain.
 
 ### 2.2 Objects used
 
@@ -72,16 +90,16 @@ The immediate implication is smaller: prefer a view wherever one exists, and tre
 | PO lines (driver) | `dbo.vwPurchaseOrderDetails` | view | verified |
 | PO headers | `dbo.vwPurchaseOrderHeader` | view | verified |
 | Receipts per line | `dbo.vwReceiverLogSummed` | view | verified — `PurchaseDetailID`, `SumOfQtyReceived`, `MaxOfDate` |
-| Receipt events | `dbo.vwReceiverLog` / `tblReceiverLog` | view/table | verified as "receipt events per line, with dates"; column list not yet dumped |
+| Receipt events | `dbo.vwReceiverLog` | view | **50 cols, genuinely event-level** — 9,596 lines have more than one receipt, up to 11 |
 | NCRs (driver) | `dbo.vwNonConformances` | view | verified |
 | NCR task counts | `dbo.vwNonConformanceList` | view | verified — `Tasks`, `Outstanding` |
 | NCR costs | `dbo.vwCostingSummed_ByNC` | view | verified |
 | NCR origin dept | `dbo.tlkpNonConformanceOrigin` | lookup | verified |
-| Companies | `dbo.tblCompany` | table | verified — no view known |
-| Supplier extension | `dbo.tblSupplier` | table | verified — no view known |
-| Item master | `dbo.tblEngItemMaster` | table | verified — no view known |
+| Supplier extension | `dbo.tblSupplier` | table | 11 cols — `SupNetTerms`, `SupFOB`, `SupQAApproved`, `DefaultCurrName` |
+| Item master | `dbo.vwEngItemMaster` | view | **54 cols — resolves UOM, category, preferred supplier to names** |
 | On-hand | `dbo.vwInventory` | view | verified |
-| Projects | `dbo.tblProjects` | table | verified — no view known |
+| Projects | `dbo.vwProjects` | view | **41 cols — adds customer name, manager, city** |
+| Companies | `dbo.tblCompany` | table | 53 cols — `vwSupplier` does not exist |
 
 ### 2.3 Connection
 
@@ -139,11 +157,40 @@ The connection is opened `autocommit=True` and only ever issues `SELECT`. **This
 
 ## 4. Supplier
 
-### 4.1 The finding that matters
+### 4.1 The finding that matters, and the trap underneath it
 
-`tblCompany.CName` carries the `NAME [CITY] (Approved)` convention — the Project Console's `ncspec._clean_client()` strips exactly that shape (`"Bosch Rexroth [Concord] (Approved)"` → `"Bosch Rexroth"`), and the scorecard's `normalize_vendor_name()` / `extract_vendor_city()` parse the same string.
+`PurchaseSupplierID → tblCompany.CompanyID` is a declared foreign key. ETO identifies a supplier by an integer, and the scorecard's whole vendor-identity mechanism is a regex reimplementation of it. That part of the original reading holds.
 
-So the Excel `Supplier` column **is** `CName`, and the scorecard's whole vendor-identity mechanism is a regex reimplementation of a foreign key. `PurchaseSupplierID` was on every PO row the entire time.
+**What the probe overturned is where the decorated name comes from.** The assumption was that `tblCompany.CName` carries the `NAME [CITY] (Approved)` convention. It does not:
+
+| Source | What it returns |
+|---|---|
+| `tblCompany.CName` | `Bluewater Heater` — **clean; 1 of 1,701 supplier rows has a bracket** |
+| `vwPurchaseOrderHeader.CName` | `Bluewater Heater` — the same clean name |
+| `vwNonConformances.Supplier` | `Bluewater Heater [Oldcastle] (Approved)` |
+| `vwReceiverLog.Supplier` | `Berendsen-Scarboro [Scarborough] (Approved)` |
+
+The decoration is applied by ETO's display layer, not stored. The Excel PO extract's `Supplier` column was therefore a **display string**, not `poh.CName`.
+
+This is the most dangerous finding in the probe, because of how it fails. Map `vendor_name` to `poh.CName` and `extract_vendor_city()` returns `None` for every row; the grain collapses from (name, city) to (name, `None`); NCR matching requires a non-null city, so it matches **zero**. Nothing raises. The workbook builds, the vendor count changes, and every Quality score reads as perfect.
+
+The fix is `@supplier_display_name` in `eto_queries.DERIVED` — the only composite expression in the whole configuration, rebuilding what ETO's display layer produces:
+
+```sql
+co.CName
+  + CASE WHEN co.CCity IS NULL OR LTRIM(RTRIM(co.CCity)) = '' THEN ''
+         ELSE ' [' + co.CCity + ']' END
+  + CASE WHEN ISNULL(sup.SupQAApproved, 0) = 1 THEN ' (Approved)' ELSE '' END
+```
+
+It matches every observed example, including `Hope Land (Approved)` — a supplier with no city, hence no brackets. It is **not yet proven character-for-character**, and probe 2 section A does exactly that, along with testing whether `dbo.udfCompanyRetrieveDisplayNames(1)` is callable so the rebuild can be dropped in favour of ETO's own function.
+
+The lasting answer is not to rebuild a display string at all — it is to key the grain on `CompanyID` and take the city from `co.CCity`. The rebuild exists to hold parity while that change is made deliberately (§13 Step 6).
+
+Two defects resolve either way:
+
+- **D-01** (identity from free text) — the key exists and is declared.
+- **D-17** (bracket-position sensitivity) — no parsing, no sensitivity.
 
 This resolves three of the design document's defects at once:
 
@@ -151,7 +198,7 @@ This resolves three of the design document's defects at once:
 - **D-17** (bracket-position sensitivity) — no parsing, no sensitivity.
 - Split vendor rows caused by name spelling variants — one `CompanyID`, one row.
 
-One caveat worth stating plainly: the Excel `Supplier #` column is **not** this key. Caption discovery on 2026-08-14 showed `PurchaseOrderDetailCustom3` is captioned "Supplier #" — a line-level custom number field, unrelated to `CompanyID`. Do not substitute one for the other.
+One caveat worth stating plainly: the Excel `Supplier #` column is **not** this key. Caption discovery on 2026-08-14 showed `PurchaseOrderDetailCustom3` is captioned "Supplier #" — a line-level custom *decimal* field, unrelated to `CompanyID`. Do not substitute one for the other.
 
 ### 4.2 Mapping — `get_vendors()`
 
@@ -187,7 +234,19 @@ Three scopes are configurable via `options.vendor_scope`:
 | `purchased_from` | appears as `PurchaseSupplierID` on any PO | narrower; only vendors with trading history |
 | `all_companies` | no filter | diagnostic only |
 
-The Excel extract held 1,803 rows against ~2,052 companies. Which scope reproduces 1,803 is a reconciliation question, and probe section G counts all four.
+Probe 1 counted all four, and **none of them is 1,803**:
+
+| Scope | Companies |
+|---|---|
+| all companies | 2,087 |
+| `CActive = 1` | 2,061 |
+| in `tblSupplier` | 1,701 |
+| in `tblSupplier` and `CActive = 1` | 1,688 |
+| purchased from (any PO) | 1,089 |
+| a project customer | 292 |
+| **the Excel extract** | **1,803** |
+
+1,803 sits between "all suppliers" and "all companies", which no single predicate here produces. Probe 2 section C3 tries the unions and the address-completeness filters.
 
 ---
 
@@ -233,35 +292,34 @@ One row per PO detail line — `PurchaseDetailID` — matching the Excel extract
 | `project_number` | `pod.ProjectID` | verified | |
 | `machine_code` | `pod.SpecID` | verified | label only; not project-unique |
 | `ordered_qty` | `pod.PurchaseQty` | verified | |
-| `part_number` | `im.ItemCompanyID` via `pod.ItemID` | probe (item master) | the PO line has `ItemID`/`ItemDescription` but **no part number** — see §6.5 |
-| `po_part_number` | — | **probe** | supplier's part number; may not exist on the line |
-| `vendor_name` | `poh.CName` | verified | the decorated string the pipeline parses |
+| `part_number` | `pod.ItemCompanyID` | verified | on the detail view directly — no item-master join needed |
+| `po_part_number` | `pod.PurchaseSupplierItem` | verified | the supplier's own part number |
+| `vendor_name` | `@supplier_display_name` | **rebuilt** | `poh.CName` is the CLEAN name — see §4.1 |
 | `unit_price` | `pod.PurchasePrice` | verified | |
 | `required_date` | `pod.DateRequired` | verified | **detail**, not header — ETO's own late report uses the detail dates and they diverge |
 | `revised_date` | `pod.DateRevised` | verified | as above |
 | `last_receipt_date` | `rls.MaxOfDate` | verified | configurable; see §6.3 |
-| `uom` | `pod.PurchaseUOM` | verified | load-bearing for Commercial — see §6.4 |
+| `uom` | `pod.PurchaseUOM` | verified | populated on 161,392 of 161,392 lines |
 | `received_qty` | `rls.SumOfQtyReceived` | verified | configurable; NULL filled to 0 |
 | `order_date` | `poh.PurchaseDate` | verified | also the created/placed date — ETO keeps no separate entry timestamp |
 | `extended_value` | `pod.ExtendedPrice` | verified | pre-computed by the view |
 | `currency_code` | `poh.PurchaseCurr` | verified | |
 | `currency_rate` | `poh.PurchaseCurrRate` | verified | mapped but unused today; the FX-normalisation hook |
-| `supplier_number` | `pod.PurchaseOrderDetailCustom3` | verified | caption = "Supplier #". **Not** the company key |
-| `order_number` | — | **probe** | ambiguous in the Excel extract |
+| `supplier_number` | `pod.PurchaseOrderDetailCustom3` | verified | caption = "Supplier #", decimal. **Not** the company key |
+| `order_number` | `pod.OrderNumber` | verified | a decimal on the detail line |
 | `receiving_date` | `pod.PurchaseOrderDetailCustom5` | verified | caption = "Receiving Date"; populated on <1% of lines |
 
-**Additive** (returned, not consumed): `supplier_company_id`, `purchase_detail_id`, `project_name`, `detail_received_qty`, `detail_last_receipt`, `log_received_qty`, `log_last_receipt`.
+**Additive** (returned, not consumed): `supplier_company_id`, `supplier_clean_name`, `supplier_city`, `supplier_qa_approved`, `purchase_detail_id`, `item_id`, `item_description`, `supplier_item_desc`, `project_name`, `project_customer`, `remedy_ncr_id`, `detail_received_qty`, `log_received_qty`, `log_last_receipt`.
 
-### 6.5 Part number comes from the item master, not the PO line
+Every contract column is now resolved. **Nothing on the PO dataset is a guess.**
 
-`vwPurchaseOrderDetails` carries `ItemID` and `ItemDescription`. It does **not** carry a part number — the verified column inventory of that view names neither `ItemCompanyID` nor `PartNumber`. So `part_number` is resolved through the declared FK `pod.ItemID → tblEngItemMaster.ItemID`, using the *same expression* as the items dataset.
+### 6.5 Part number is on the PO line after all
 
-Two reasons this is the right shape rather than a workaround:
+The first draft of this document routed `part_number` through a join to the item master, on the reasoning that `vwPurchaseOrderDetails` carried only `ItemID` and `ItemDescription`. The probe showed otherwise: the view carries **`ItemCompanyID : nvarchar NOT NULL`** directly, alongside `PurchaseSupplierItem` (the supplier's own part number) and `PurchaseSupplierDescription`.
 
-1. **The two datasets cannot disagree.** Lead-Time matching normalises the PO's `part_number` and the Item Master's `part_number` into a common key and joins them. Sourcing both from one expression makes a mismatch structurally impossible — today's 99.97% match rate becomes 100% by construction.
-2. **It is the same argument the document makes for vendors.** ETO identifies an item by `ItemID`, a declared key; the part number is a display attribute hanging off it. Joining on the key and reading the label is what the supplier section argues for, applied to items.
+So `part_number` is `pod.ItemCompanyID`, the join is gone, and the query is one table lighter. The guarantee the join was there to provide survives anyway: `vwEngItemMaster` exposes the same `ItemCompanyID` for the same `ItemID`, so the PO part key and the Item Master part key are the same string by construction.
 
-`item_id` and `item_description` also ship as additive columns, so the key itself is available when the pipeline is ready to use it.
+`item_id`, `item_description` and `supplier_item_desc` ship as additive columns.
 
 ### 6.3 Receipt basis — two sources, both returned
 
@@ -269,8 +327,10 @@ ETO exposes fulfilment twice, and the two do not have to agree:
 
 | Source | Columns | Nature |
 |---|---|---|
-| PO line | `pod.Received`, `pod.LastReceivedDate` | the line's own running state |
+| PO line | `pod.Received` — **and no date at all** | the line's own running quantity |
 | Receiver log | `rls.SumOfQtyReceived`, `rls.MaxOfDate` | derived from actual receipt transactions |
+
+The probe removed the choice for dates: **`vwPurchaseOrderDetails` has no `LastReceivedDate` column.** Earlier discovery notes referred to one, but it is not on this view. The receiver log is the only source of a receipt date, so `last_receipt_source: "detail"` degrades to no date and the receiver log is effectively mandatory.
 
 **The receiver log is authoritative.** ETO's own vendor-delivery report `dbo.urpPurchasingLateVendors` defines lateness as:
 
@@ -320,9 +380,22 @@ Path B (ETO's)    nc.PurchaseOrderID ──► poh.PurchaseSupplierID ──► 
                   an integer key, no parsing, no ambiguity
 ```
 
-Path B is exact where it applies — but `PurchaseOrderID` is **NULL on ~70% of NCRs** (1,298 of 1,847, verified). That is not a defect in the mapping; most NCRs are internal and have no supplier at all. What matters is the overlap: how many of the 378 *supplier-linked* NCRs also carry a `PurchaseOrderID`. Probe section E measures precisely that, and section E2 lists the cases where the NCR's own `Supplier` disagrees with the PO's — the most informative rows in the whole probe.
+**The probe settled it decisively.** Of 1,941 active NCRs:
 
-Both paths ship. `vendor_name` keeps parity; `supplier_company_id` is the migration target.
+| Supplier path | NCRs |
+|---|---|
+| exact key via PO | **578** |
+| PO set but supplier unresolved | 0 |
+| name only, no PO | **0** |
+| no supplier at all | 1,363 |
+
+The 578 with a supplier are *exactly* the 578 with a `PurchaseOrderID` — ETO derives `nc.SupplierID` from the PO, so the two are the same population by construction. **There is no NCR anywhere in the source that has a supplier name but no resolvable key.**
+
+That closes the question behind D-03. The prototype's 51 unmatched supplier-linked NCRs are not a data problem; they are name-parsing failures on records whose supplier ID was available the whole time. Switching the join to `SupplierID` recovers all of them and cannot produce new ones.
+
+The 1,363 with no supplier are internal non-conformances, correctly excluded from supplier scoring.
+
+Both paths ship. `vendor_name` (`nc.Supplier`, already decorated) keeps parity; `supplier_company_id` (`nc.SupplierID`) is the migration target, and `supplier_display_name` is the rebuild, carried alongside so the reconciliation can compare ETO's own string against it.
 
 ### 7.2 Mapping — `get_ncrs()`
 
@@ -342,22 +415,26 @@ Driver `dbo.vwNonConformances`, filtered `SActive = 1`.
 | `source_info` | `nc.SourceDescription` | verified |
 | `po_number` | `nc.PurchaseOrderID` | verified — nullable |
 | `part_number` | `nc.PartNumber` | verified |
-| `quantity` | `nc.Quantity` | verified |
-| `quantity_rejected` | `nc.QuantityRejected` | verified |
+| `quantity` | `nc.Quantity` | verified — populated on 1,326 of 1,941 |
+| `quantity_rejected` | `nc.QuantityRejected` | verified — populated on 929 of 1,941 |
 | `interim_action` | `nc.RecommendedInterim` | verified |
 | `root_cause` | `nc.NonConformanceRootCause` | verified |
 | `corrective_pre_action` | `nc.NonConformanceCorrectivePreventiveAction` | verified |
 | `ncr_costs` | `ncc.TotalNCCostingValue` | verified |
-| `ncr_hours` | — | probe — not consumed today |
+| `ncr_hours` | `ncc.TotalHours` | verified — on the costing view |
 | `target_date` | `nc.NonConformanceCustom5` | verified — caption = "Target Date" |
-| `date_follow_up` | `nc.QualityFollowUp` | verified |
+| `date_follow_up` | — | **`QualityFollowUp` is `nvarchar`, not a date** — see below |
 | `created_date` | `nc.CreationDate` | verified |
 | `vendor_name` | `nc.Supplier` | verified |
 | `item_id` | `nc.ItemID` | verified |
 
-**Additive:** `supplier_company_id`, `po_supplier_name`, `ncr_supplier_id`, `nc_id`, `origin_department`.
+**Additive:** `supplier_company_id`, `po_supplier_company`, `po_supplier_name`, `supplier_display_name`, `quality_follow_up`, `created_date_only`, `ncr_description`, `part_description`, `customer_name`, `nc_id`, `origin_department`, `ncr_labour_hours`, `ncr_purchased_cost`.
 
-`vwNonConformances` is documented as "header + resolved names", so the `tblNonConformance` header columns — `Quantity`, `QuantityRejected`, `SpecID`, `ItemID`, `RecommendedInterim`, `QualityFollowUp` — are addressable on the view. Six fields that looked like open questions were already answered by the 2026-07-26 NCR discovery.
+Two probe results shape this dataset.
+
+**`QualityFollowUp` is `nvarchar NOT NULL`, not a date.** The Excel column was "Date of follow-up", but ETO's field is free text. Mapping it to `date_follow_up` and coercing would turn every value into `NaT` — data destroyed silently to satisfy a column name. It ships as the additive text column `quality_follow_up` instead, and `date_follow_up` is honestly NULL. Nothing downstream reads either.
+
+**The Excel NCR extract came from `vwNonConformanceList`, not `vwNonConformances`.** `Tasks`, `Outstanding` and `CreationDate_DateOnly` — the Excel headers "Tasks", "Outstanding" and "Created (Date Only)" — exist only on the list view. But `NonConformanceBarcode` (the "NC #") and `SActive` exist only on `vwNonConformances`, so that remains the driver and the list view joins 1:1. `created_date_only` ships additively for exact comparison during reconciliation.
 
 `quantity` and `quantity_rejected` stay in `blocking_gaps()` anyway: they are load-bearing for NCR Rejected %, and without them the quality-eligibility predicate is false for every row while the Quality *score* — NCR count over PO count — carries on producing numbers. A component that half-works is harder to notice than one that fails.
 
@@ -402,25 +479,51 @@ The design document's §15.4 noted that the NCR extract already carries the fiel
 
 ## 8. Item Master
 
-### 8.1 Mapping — `get_items()`
+### 8.1 The view, not the table
 
-Driver `dbo.tblEngItemMaster`, joined `1:1` to a **pre-grouped** on-hand subquery.
+`vwEngItemMaster` exists (54 columns) and is now the driver. It matters because the base table stores UOM and category as **integer IDs** — `ItemUOM : int`, `ItemCategory : int` — while the view resolves them to `UOMDescription` and `CategoryDescription`, and resolves the preferred supplier to a name. The Excel extract carried descriptions, so the view is both the governance-correct and the parity-correct choice.
 
-The pre-grouping is not optional. ETO inventory is a shared pool with one row per item × location (verified 2026-08-03, locations "Macrodyne 1", "Macrodyne 2 (Racco)", "TOC"). Joining `vwInventory` directly would multiply every item row by its location count.
+On-hand quantity is joined `1:1` from a **pre-grouped** subquery. ETO inventory is a shared pool with one row per item × location, so joining `vwInventory` directly would multiply every item row by its location count.
 
-| Contract column | ETO expression | Confidence |
+### 8.2 Mapping — `get_items()`
+
+| Contract column | ETO expression | Note |
 |---|---|---|
-| `part_number` | `im.ItemCompanyID` | probe |
-| `description` | `im.ItemDescription` | probe |
-| `lead_time` | `im.EstimatedLeadTime` | verified — **and empty**, see §10 |
-| `quantity_on_hand` | `SUM(vwInventory.QtyOnHand)` per `ItemID` | likely |
-| `uom`, `category`, `list_price`, `revision`, `lpp`, `preferred_supplier`, `supplier_part_number`, `last_supplier`, `manufacturer`, `manuf_part_number`, `quantity_reserved` | — | probe |
+| `part_number` | `im.ItemCompanyID` | populated on 87,237 of 87,237 |
+| `description` | `im.ItemDescription` | |
+| `uom` | `im.UOMDescription` | resolved by the view |
+| `category` | `im.CategoryDescription` | resolved by the view |
+| `list_price` | `im.ItemListCost` | |
+| `lpp` | `im.ItemLastCost` | LPP reads as Last Purchase Price |
+| `revision` | `im.ItemRevNumber` | |
+| `quantity_on_hand` | `SUM(vwInventory.QtyOnHand)` per `ItemID` | pre-grouped |
+| `preferred_supplier` | `im.PreferredSupplier` | resolved to a name by the view |
+| `supplier_part_number` | `im.SupplierPartNumber` | populated on 9,637 of 87,237 |
+| `manufacturer` | `im.Manufacturer` | |
+| `manuf_part_number` | `im.ManufacturerPartNumber` | populated on 22,990 of 87,237 |
+| `lead_time` | `@item_lead_time` | `NULLIF(EstimatedLeadTime, 0)` — see §8.3 |
+| `last_supplier` | — | `im.CName` is a supplier name on the view but which one is unproven; left NULL rather than guessed |
+| `quantity_reserved` | — | **`ItemReserved` is a `bit` flag, not a quantity.** No equivalent exists |
 
-**Additive:** `item_id`.
+**Additive:** `item_id`, `raw_lead_time`, `preferred_supplier_id`, `last_supplier_company_id`, `item_reserved_flag`, `obsolete`, `long_lead_flag` (`PartCustom7`), `oversize_flag` (`PartCustom8`).
 
-Only `part_number` and `lead_time` are consumed by the pipeline today, so the long probe list is low-risk: the other columns exist in the contract, are returned as NULL, and nothing reads them. `tblEngItemMaster` is also where the maintained `PartCustom7`/`PartCustom8` flags live (long-lead and oversize) — real, maintained data, and a candidate if item risk ever enters the scorecard.
+### 8.3 The zero-lead-time hazard
 
----
+This is the one place where better data would have made the scorecard **worse**, and it is worth stating plainly because the failure is silent and it costs a grade.
+
+`EstimatedLeadTime` on 87,237 items:
+
+| | Items |
+|---|---|
+| populated | 844 |
+| **of which positive** | **114** |
+| of which literal zero | 730 |
+
+`lead_time_evaluator` accepts any benchmark `>= 0`. Read raw, those 730 zeros become real zero-day promises: `actual_lead_time_days <= 0` is false for anything that took a day to arrive, so essentially every line against those parts is marked non-adherent. A vendor with five such lines clears the minimum sample and takes a Lead-Time score near 0 — a **D on a 15% weight, computed entirely from parts where nobody entered a lead time.**
+
+A zero here means "unset", not "same day". `@item_lead_time` says so with `NULLIF(EstimatedLeadTime, 0)`, which is why `lead_time` is the only item column that is not a bare reference.
+
+`tblEngItemMaster` is also where the maintained `PartCustom7` / `PartCustom8` flags live (long-lead and oversize) — real, maintained data, and a candidate if item risk ever enters the scorecard.
 
 ## 9. What the Database Changes
 
@@ -429,13 +532,13 @@ Moving to ETO is not just a plumbing change. Five of the design document's defec
 | Design doc defect | What ETO provides | Status after migration |
 |---|---|---|
 | **D-01** vendor identity from free text | `PurchaseSupplierID` → `CompanyID`, a declared FK | **Fixable now.** Both keys ship; switching the grain is a config-and-groupby change. |
-| **D-03** Quality numerator/denominator scope mismatch | NCR → PO → supplier exact key | **Fixable**, to the extent probe E shows `PurchaseOrderID` coverage on supplier-linked NCRs. |
+| **D-03** Quality numerator/denominator scope mismatch | NCR → PO → supplier exact key | **Fully fixable — proven.** All 578 supplier-linked NCRs carry a resolvable `SupplierID`; zero have a name without a key. |
 | **D-17** bracket-position parsing bug | no parsing at all | **Gone** with D-01. |
 | **D-05** no evaluation period | `poh.PurchaseDate` and `nc.CreationDate` are queryable date columns | **Fixable now.** `scope.po_date_from` / `po_date_to` exist; a rolling window is a config value, not a code change. |
 | **D-06** unvalidated `resolved` contract | `bit` with a known type | **Fixed** — the repository normalises the value and raises on anything it cannot map, instead of letting a text value silently zero the component (§7.3). |
 | **D-09** no run history | the `scorecard` schema in `docs/DESIGN.md` §15.3 | Unblocked — persistence has somewhere to live. |
 | Responsiveness proxy | `Released`, `Custom5` target date, task counts | **Improvable now**, no new source needed. |
-| Partial receipts excluded from OTD | `vwReceiverLog` event-level receipts | Probe F dumps the shape; the biggest available OTD improvement. |
+| Partial receipts excluded from OTD | `vwReceiverLog` event-level receipts | **Confirmed available.** 50 columns, one row per receipt; 9,596 lines have more than one, up to 11. The biggest available OTD improvement. |
 | **D-15** duplicated business rules | — | **Unchanged.** ETO does not help here, and this migration adds a second copy of the PO type validation (§15). |
 | Project blindness | `ProjectID` on PO and NCR | **Delivered** as attribute + filter. |
 | Cross-currency | `PurchaseCurrRate` on the header | Available; needs an agreed FX rule (open decision #11). |
@@ -444,54 +547,64 @@ Moving to ETO is not just a plumbing change. Five of the design document's defec
 
 ## 10. What the Database Does Not Fix
 
-**Lead-Time is dead at source.** `tblEngItemMaster.EstimatedLeadTime` is empty on **every** item — verified 2026-07-25 during the Project Console's late-PO work, where it forced the "Ordered Late" and "Critical" exception flags to be dropped as permanently blank for the same reason.
+**Lead-Time still cannot be scored — but for a different reason than this document first recorded.**
 
-The design document recorded D-04 as a coverage problem in the Excel extract (3 of 23,344 rows eligible). It is not an extract problem. The benchmark does not exist in ETO, so migrating changes nothing: the Lead-Time component will remain `INSUFFICIENT BENCHMARK DATA` for every vendor, and its 15% weight will keep renormalizing away.
+The earlier finding, from the Project Console's 2026-07-25 late-PO work, was that `EstimatedLeadTime` is empty on every item. That is no longer true. The probe found 844 of 87,237 items populated — and only **114 with a positive value**.
 
-Two honest options, both requiring a business decision (open decision #7):
+So the correction runs both ways:
 
-1. **Drop the component** from the published weighting until a benchmark exists. A permanently-N/A component makes Weight Coverage % harder to read and implies evidence that is never coming.
-2. **Change the benchmark** to something ETO actually holds — the PO's own need-by date (`DateRequired`) against the order date is a *promise-to-delivery* measure rather than a *quoted-lead-time* measure, and it is fully populated.
+- It is **not** an empty column. D-04 was overstated as "the benchmark does not exist in this source".
+- It is **0.13% coverage**, which is not a benchmark either. The minimum sample is five eligible lines per vendor; at that density almost no vendor will reach it, and the component stays `INSUFFICIENT BENCHMARK DATA` for practically all of them.
+- And the 730 zeros are actively dangerous if read raw (§8.3).
+
+Probe 2 section D2 counts how many PO lines actually join to a positive lead time, which turns "practically none" into a number.
+
+The two options are unchanged, and both still need a business decision (open decision #7):
+
+1. **Drop the component** from the published weighting until coverage exists. A permanently-N/A component makes Weight Coverage % harder to read and implies evidence that is never coming.
+2. **Change the benchmark** to something ETO holds densely — the PO's own need-by date against the order date is a *promise-to-delivery* measure rather than a *quoted-lead-time* measure, and it is fully populated.
 
 Option 2 is a different metric, not the same metric with better data. Worth saying out loud before anyone adopts it.
 
-Probe section H re-confirms the emptiness rather than assuming a 2026-07 finding still holds.
-
----
+A third possibility the probe opens: if the 114 positively-populated items are concentrated in parts that are actually bought, the component might be scoreable for a small, named set of vendors. That would be honest — a scored component covering a stated minority — but only if the workbook says which vendors it applies to. D2 is the test.
 
 ## 11. The Scope Question
 
-**This is the largest open item in the migration, and it is not a technical one.**
+**This is now the only thing standing between here and a reconciliation, and the probe made it harder rather than easier.**
 
-| Population | Rows |
+| Dataset | Excel extract | ETO population | Explained? |
+|---|---|---|---|
+| Purchase orders | 23,344 (post-cleaning) | 161,392 lines | **no** |
+| NCRs | 1,248 | 1,941 (`SActive = 1`, which is all of them) | **no** |
+| Vendors | 1,803 | 2,087 companies / 1,701 suppliers | **no** |
+| Item master | 86,730 | 87,237 | **yes** — the same query, run earlier |
+
+### 11.1 The PO scope resists every filter
+
+| Scope | Lines |
 |---|---|
-| `vwPurchaseOrderDetails` | ~160,803 |
-| The Excel extract the prototype scored | 23,344 **after cleaning** |
+| all lines | 161,392 |
+| header active | 161,392 |
+| active + not archived | 161,392 |
+| active + not archived + issued | 159,464 |
+| issued + has receipt | 157,223 |
+| **the Excel extract** | **23,344 after cleaning** |
 
-Two details that change how this is measured. First, 23,344 is a *post-cleaning* count — after header-row removal and the required-field split — while the probe counts raw rows, so the correct scope lands somewhat **above** 23,344, not on it. "Nearest 23,344" is the wrong test; "slightly above, and explicable" is right. Second, the scope the config ships with (`active_only`, `exclude_archived_lines`, `issued_only`) is a **placeholder, not a finding** — the not-sent backlog is only ~4.5% of headers, so those three filters land nowhere near the target. `scope.scope_confirmed` is `false` and the repository warns on every load until it is settled.
+`PurchaseActive` and `Archived` exclude nothing at all. The issued filter removes 1,928 lines — the draft backlog. Nothing here is within an order of magnitude of 23,344, which is roughly one seventh of the population.
 
-**And this is not only a PO problem.** All four extracts are unexplained:
+Nor is it a plain year: issued lines run 10,866 (2026) to 26,068 (2022), and 2023 alone is 23,031 — close, but a year window would have to be *raw* above 23,344, and 2023 is below it.
 
-| Dataset | Excel extract | ETO population |
-|---|---|---|
-| Purchase orders | 23,344 (post-cleaning) | ~160,803 lines |
-| NCRs | 1,248 | ~1,872 (`SActive = 1` narrows it) |
-| Item master | 86,730 | `tblEngItemMaster` — uncounted |
-| Vendors | 1,803 | ~2,052 companies |
+Probe 2 section B tries the remaining candidates: a project selection (with a running total, so the answer is visible as "the top N projects"), receipt state, a rolling date window, and a single buyer.
 
-Probe section D covers POs, G covers vendors, and G4 counts the NCR and item populations that the first draft of this document overlooked. Every one of them will show as an unexplained diff in `reconcile_sources.py` until it is understood.
+### 11.2 Why it matters more than it looks
 
-The extract was scoped by something — a project selection, a date window, an issued/active filter, a receipt condition, or a combination — and **nothing in the prototype, the README or the column mappings records what.** Every published figure in the design document (416 vendor rows, 106 scored, 20,181 delivery-eligible, the A/B/C/D distribution) describes that unidentified subset.
+Two consequences, and the second is the uncomfortable one.
 
-Two consequences:
+**Reconciliation is not interpretable without it.** A SQL run against the wrong population produces a large diff that says nothing about whether the queries are correct.
 
-1. **Reconciliation needs the scope first.** A SQL run against the wrong population produces a huge diff that says nothing about query correctness. Probe section D counts each candidate scope so the one that lands near 23,344 can be identified, then set in `config/eto.json`.
+**The prototype's published figures describe an unidentified slice.** 416 vendor rows, 106 scored, 20,181 delivery-eligible, the A/B/C/D distribution — every one of them describes 14% of the purchasing history, chosen by a process nobody recorded. If that slice turns out to be one buyer's saved filter or a stale date range, the grades do not mean what the workbook says they mean. That is worth knowing before any of them reach a supplier conversation.
 
-2. **The scope may not be defensible even once identified.** If the extract was, say, one buyer's saved filter or a single year, then the prototype's grades describe a slice nobody chose deliberately. That is worth knowing before any of those grades reach a supplier conversation.
-
-If no scope reproduces 23,344, the honest conclusion is that the extract cannot be reconstructed, and the ETO run becomes the new baseline with its own explicitly chosen scope. That is a better outcome than a scope that merely happens to match a row count.
-
----
+**If probe 2 cannot reconstruct it**, the honest conclusion is that the extract is not reproducible, and the ETO run becomes the new baseline with an explicitly chosen scope — a rolling window, or a named project set. That is a better outcome than a scope that merely happens to match a row count.
 
 ## 12. Code Architecture
 
@@ -502,7 +615,8 @@ config/eto.json                        connection, scope, options, and every col
 src/data_access/eto_queries.py         SQL construction + contracts + validation
 src/data_access/sql_repository.py      EtoRepository(VendorScorecardRepository)
 src/data_access/repository_factory.py  source selection + a closing context manager
-tools/eto_schema_probe.py              read-only discovery (run on the ETO server)
+tools/eto_schema_probe.py              probe 1 — read-only column and object discovery (RUN)
+tools/eto_scope_probe.py               probe 2 — display name, and the extract scopes
 tools/reconcile_sources.py             Excel vs ETO, stage totals + vendor diff
 tools/dao_conformance_check.py         executable proof that the two DAOs are interchangeable
 docs/ETO_MAPPING.md                    this document
@@ -582,11 +696,11 @@ A component that scores nothing because a column is NULL looks exactly like a co
 
 Ordered so each step is verifiable before the next depends on it.
 
-**Step 1 — Probe.** Run `tools/eto_schema_probe.py` on a machine that reaches `MACRO-ETO-SVR`; paste the output. Read-only, no dependencies beyond `pyodbc`.
+**Step 1 — Probe 1. DONE (2026-09-03).** Every column question answered; three assumptions overturned. See *What the Probe Settled*.
 
-**Step 2 — Resolve columns.** Fill in `config/eto.json` from probe sections B and C. `uom`, `quantity` and `quantity_rejected` first — everything else degrades gracefully.
+**Step 2 — Resolve columns. DONE.** `config/eto.json` carries no guesses on the PO, NCR or vendor datasets. Two item columns are honestly NULL because ETO has no equivalent (`last_supplier`, `quantity_reserved`), and neither is consumed.
 
-**Step 3 — Settle the scope.** From probe section D, find the filter combination nearest 23,344 and set `scope`. If nothing lands close, record that the extract is not reconstructable and choose a scope deliberately (§11).
+**Step 3 — Probe 2, then settle the scope.** Run `tools/eto_scope_probe.py` and paste the output. It answers the one blocking question left — whether `@supplier_display_name` reproduces ETO's own string exactly — and hunts for the PO, NCR and vendor scopes. Set `scope` and flip `scope_confirmed` to `true` only when the answer is defensible, not merely close (§11).
 
 **Step 4 — Reconcile.** `python tools/reconcile_sources.py`. Target: stage totals matching, or every difference explained. Expect the vendor diff to show rows only in one source — those are vendor-identity differences, and they are the D-01 evidence.
 
@@ -609,27 +723,23 @@ Run `python tools/dao_conformance_check.py` first — it takes seconds, needs no
 
 ## 14. Open Verification Items
 
-Reduced substantially from the first draft: cross-checking against the project's own discovery documents resolved `uom`, both NCR quantities, `SpecID`, `ItemID`, `RecommendedInterim` and `QualityFollowUp`, all of which had been carried as unknowns. What remains, with the consequence of each.
+Probe 1 closed most of this list. What remains, with the consequence of each.
 
 | # | Item | Status | If unresolved |
 |---|---|---|---|
-| V-01 | **`im.ItemCompanyID` is the item number** | open | **The one genuinely load-bearing unknown.** It is the PO required field `part_number` *and* the lead-time match key, and it feeds both datasets. A wrong name errors loudly; a `null` produces a zero-row scorecard — which is why `LOAD_BEARING` refuses it |
-| V-02 | **PO scope that yields ~23,344+** | open | Reconciliation is not interpretable (§11) |
-| V-03 | **Vendor scope that yields 1,803** | open | Vendor Review population differs; `active_suppliers` is the new candidate |
-| V-04 | **NCR and item scopes** | open | The other two unexplained extracts (1,248 NCRs, 86,730 items) — probe G4 |
-| V-05 | `poh.PurchasePrinted` / `PurchaseEmailed` on the **view** | open | Verified on `tblPurchaseOrderHeader`, not on `vwPurchaseOrderHeader`. `issued_only` defaults on, so a missing column fails the entire PO query |
-| V-06 | `PurchaseOrderID` coverage on supplier-linked NCRs | open | Cannot size the D-01/D-03 fix — probe E |
-| V-07 | `vwReceiverLog` column shape | open | Partial-receipt OTD stays blocked. The object is confirmed to exist and to hold receipt events with dates; only its columns are undumped |
-| V-08 | `tblCompany` address columns | open | Vendor completeness checks misfire. `CCity` has one piece of contrary evidence (§4.2) |
-| V-09 | `pod.PurchaseUOM` **populated**, not just present | open | Name is verified; emptiness would still kill Commercial — probe C2 |
-| V-10 | `EstimatedLeadTime` still empty | open | Determines whether D-04 is closed or merely re-confirmed |
-| V-11 | Item master attribute columns | open | Return NULL; only `part_number` and `lead_time` are consumed, so low impact |
-| V-12 | `po_part_number`, `order_number`, `ncr_hours` | open | Return NULL; none is consumed today |
-| V-13 | Views for `tblCompany` / `tblSupplier` / `tblEngItemMaster` / `tblProjects` | open | Base-table reads; see the governance note in §2.1 |
+| V-01 | **`@supplier_display_name` reproduces ETO's string exactly** | **BLOCKING** | The grain collapses to (name, `None`) and NCR matching returns zero — silently. Probe 2 §A compares it character-for-character against `nc.Supplier` and `vwReceiverLog.Supplier`, and tests whether `udfCompanyRetrieveDisplayNames(1)` is callable so the rebuild can be dropped |
+| V-02 | **PO scope that yields ~23,344+** | open | Reconciliation is not interpretable (§11). Probe 2 §B |
+| V-03 | **NCR scope that yields 1,248** | open | 1,941 available; no sub-population found yet. Probe 2 §C1–C2 |
+| V-04 | **Vendor scope that yields 1,803** | open | Sits between 1,701 suppliers and 2,087 companies. Probe 2 §C3 |
+| V-05 | Lead-time coverage on lines actually purchased | open | Decides whether §10 option 1 or 3 applies. Probe 2 §D2 |
+| V-06 | `im.CName` on `vwEngItemMaster` — is it the last supplier? | open | `last_supplier` stays NULL; not consumed |
+| V-07 | Views for `tblCompany` / `tblSupplier` | open | Base-table reads; `vwSupplier` confirmed not to exist. See §2.1 |
+
+**Closed by probe 1:** every PO, NCR and vendor contract column; `PurchaseUOM` presence *and* population; the NCR quantities; `ItemCompanyID` on the PO line; `OrderNumber`; `PurchaseSupplierItem`; `TotalHours`; `PurchasePrinted` / `PurchaseEmailed` on the view; the `tblCompany` address block; the `tblSupplier` attributes; `vwReceiverLog`'s event-level shape; the existence of `vwEngItemMaster` and `vwProjects`; and the `EstimatedLeadTime` correction.
 
 ## 15. Risks
 
-**A quiet NULL is worse than a loud failure.** An unresolved column does not crash — it makes a component score nothing, which looks like a vendor with no history. `blocking_gaps()` covers the two fields where this would be most damaging; the mitigation for the rest is that no other unresolved column is consumed by any metric.
+**A quiet wrong answer is worse than a loud failure**, and this migration has now produced two examples of the shape. The supplier display name (§4.1) would collapse the grain without raising; the zero lead times (§8.3) would hand out D grades computed from unset data. Both were caught by asking what the data actually contains rather than what the column is called, and neither would have been caught by a test that only checked the pipeline ran. `blocking_gaps()` covers the columns whose absence is silent; it cannot cover a column that is present and wrong, which is why probe 2 §A exists.
 
 **Reconciling against an uncharacterised baseline.** §11. The Excel extract's scope is unknown, so "matches Excel" may mean "matches an arbitrary slice". Treat a clean reconciliation as evidence the queries are right, not as evidence the population is.
 

@@ -3,10 +3,11 @@ eto_queries.py — SQL against the Total ETO database for the Vendor Scorecard.
 
 Design rules this module obeys:
 
-1.  **Views, not base tables.** Governance rule from REPORTING_SCHEMA_FRAMEWORK.md:
-    production reporting reads ETO's views so the vendor's join logic (supplier name,
-    item description, currency) stays in one place. Base tables are used only where no
-    view is known to exist (tblCompany, tblSupplier, tblEngItemMaster, tblProjects).
+1.  **Views, not base tables.** Production reporting reads ETO's views so the vendor's
+    join logic (supplier name, item description, currency) stays in one place. The
+    2026-09-03 probe found views for two objects this module had been reading as base
+    tables -- vwEngItemMaster and vwProjects -- and both are now used. vwSupplier does
+    not exist, so tblCompany and tblSupplier remain the only base-table reads.
 
 2.  **Read-only.** Every statement here is a SELECT. Nothing writes to ETO, ever.
 
@@ -27,10 +28,11 @@ Row-multiplication safety: every join added here is many-to-one or one-to-one on
 driver's grain, so no query can inflate the row count of its driver table.
   * PO detail -> header            N:1 on PurchaseOrderID
   * PO detail -> receiver summed   1:1 on PurchaseDetailID
-  * PO detail -> item master       N:1 on ItemID (declared FK)
+  * PO detail -> company/supplier  N:1 on CompanyID (both PKs)
   * PO detail -> projects          N:1 on ProjectID
   * NCR -> list / costs / origin   1:1 / N:1
   * NCR -> PO header               N:1 on PurchaseOrderID (LEFT: 70% NULL)
+  * NCR -> company/supplier        N:1 on nc.SupplierID
   * Item master -> inventory       1:1 against a pre-grouped subquery
 """
 
@@ -107,6 +109,55 @@ _DEFAULT_NULL_TYPE = "nvarchar(255)"
 
 
 # ==================================================
+# DERIVED EXPRESSIONS
+# ==================================================
+#
+# A config entry may name one of these with a leading @. Arbitrary SQL is never
+# accepted from configuration; only a name from this dictionary is.
+#
+# Each entry documents WHY it is a composite rather than a column, because a
+# composite is harder to audit and should have to earn its place.
+# ==================================================
+
+DERIVED = {
+
+    # ETO's display name for a supplier.
+    #
+    # vwPurchaseOrderHeader.CName is the CLEAN company name ("Bluewater Heater").
+    # The Excel extract carried the DECORATED display name
+    # ("Bluewater Heater [Oldcastle] (Approved)"), and vendor_matcher parses the
+    # city out of those brackets to form half of the scorecard's grain.
+    #
+    # The decoration is not stored: only 1 of 1,701 supplier rows has a bracket in
+    # tblCompany.CName. ETO applies it in the display layer, which is why
+    # vwNonConformances.Supplier and vwReceiverLog.Supplier show it and the PO
+    # header view does not.
+    #
+    # Feeding poh.CName through unchanged would give every vendor a NULL location,
+    # collapse the grain from (name, city) to (name, None), and match zero NCRs --
+    # without raising anything. So the string is rebuilt here.
+    "@supplier_display_name": (
+        "(co.CName"
+        " + CASE WHEN co.CCity IS NULL OR LTRIM(RTRIM(co.CCity)) = ''"
+        " THEN '' ELSE ' [' + co.CCity + ']' END"
+        " + CASE WHEN ISNULL(sup.SupQAApproved, 0) = 1"
+        " THEN ' (Approved)' ELSE '' END)"
+    ),
+
+    # Item lead time, with zero treated as "not set".
+    #
+    # EstimatedLeadTime is populated on 844 of 87,237 items but positive on only
+    # 114 of those -- 730 items carry a literal 0. The lead-time evaluator accepts
+    # any value >= 0 as a benchmark, so a raw read would judge those lines against
+    # a zero-day promise and mark essentially all of them non-adherent, handing
+    # affected vendors a Lead-Time D on a 15% weight built entirely on unset data.
+    #
+    # A zero here means nobody entered a lead time. NULLIF says so.
+    "@item_lead_time": "NULLIF(im.EstimatedLeadTime, 0)",
+}
+
+
+# ==================================================
 # CONFIG LOADING AND VALIDATION
 # ==================================================
 
@@ -136,10 +187,22 @@ def load_eto_config(config_path="config/eto.json"):
         for alias, expr in colmap.items():
             if alias.startswith("_") or expr is None:
                 continue
-            if not _SAFE_EXPR.match(str(expr)):
+            text = str(expr)
+
+            if text.startswith("@"):
+                if text not in DERIVED:
+                    raise ValueError(
+                        f"columns.{dataset}.{alias} = {expr!r} names a derived "
+                        f"expression that does not exist. Known: "
+                        f"{', '.join(sorted(DERIVED))}"
+                    )
+                continue
+
+            if not _SAFE_EXPR.match(text):
                 raise ValueError(
-                    f"columns.{dataset}.{alias} = {expr!r} is not a bare column "
-                    f"reference. Only 'alias.Column' expressions are allowed."
+                    f"columns.{dataset}.{alias} = {expr!r} is neither a bare "
+                    f"'alias.Column' reference nor an @-name from "
+                    f"eto_queries.DERIVED. Arbitrary SQL is not accepted."
                 )
 
     options = cfg["options"]
@@ -172,8 +235,14 @@ def _select_list(colmap, contract, additive=()):
         if expr is None:
             sql_type = _NULL_TYPES.get(alias, _DEFAULT_NULL_TYPE)
             parts.append(f"CAST(NULL AS {sql_type}) AS {alias}")
-        else:
-            parts.append(f"{expr} AS {alias}")
+            continue
+
+        text = str(expr)
+
+        if text.startswith("@"):
+            text = DERIVED[text]
+
+        parts.append(f"{text} AS {alias}")
 
     return ",\n           ".join(parts)
 
@@ -294,8 +363,10 @@ def build_purchase_order_sql(cfg):
             ON poh.PurchaseOrderID = pod.PurchaseOrderID
     LEFT JOIN {src['receiver_summed']} AS rls
             ON rls.PurchaseDetailID = pod.PurchaseDetailID
-    LEFT JOIN {src['item_master']} AS im
-            ON im.ItemID = pod.ItemID
+    LEFT JOIN {src['company']} AS co
+            ON co.CompanyID = poh.PurchaseSupplierID
+    LEFT JOIN {src['supplier']} AS sup
+            ON sup.CompanyID = poh.PurchaseSupplierID
     LEFT JOIN {src['projects']} AS pj
             ON pj.ProjectID = pod.ProjectID
     WHERE {where_sql}{project_sql}
@@ -319,9 +390,19 @@ def build_ncr_sql(cfg):
       supplier_company_id poh.PurchaseSupplierID  the exact key, reached through the
                                                NCR's PurchaseOrderID
 
-    The PO join MUST be LEFT: PurchaseOrderID is NULL on ~70% of NCRs (1,298 of 1,847
-    verified 2026-07-04). An INNER join here would silently discard most of the NCR
-    population.
+    The PO join MUST be LEFT. Probe 2026-09-03: of 1,941 active NCRs, 578 carry a
+    supplier and 1,363 carry none -- and those are EXACTLY the same 578 that carry a
+    PurchaseOrderID, because ETO derives nc.SupplierID from the PO. An INNER join would
+    discard 70% of the NCR population.
+
+    That equality is the important result. No NCR has a supplier name without a
+    resolvable key, so the exact-key path reaches 100% of supplier-linked NCRs. The
+    prototype's 51 unmatched exceptions are an artifact of name parsing, not of missing
+    data in the source.
+
+    tblCompany and tblSupplier are joined on nc.SupplierID so the additive
+    supplier_display_name is built exactly as it is on the PO side, letting the
+    reconciliation compare ETO's own decorated string against the reconstruction.
     """
 
     src = cfg["sources"]
@@ -350,6 +431,10 @@ def build_ncr_sql(cfg):
            ON org.NonConformanceOriginID = nc.NonConformanceOriginID
     LEFT JOIN {src['po_header']} AS poh
            ON poh.PurchaseOrderID = nc.PurchaseOrderID
+    LEFT JOIN {src['company']} AS co
+           ON co.CompanyID = nc.SupplierID
+    LEFT JOIN {src['supplier']} AS sup
+           ON sup.CompanyID = nc.SupplierID
     WHERE {where_sql}{project_sql}
     """
 
@@ -368,9 +453,16 @@ def build_item_sql(cfg):
     with one row per item x location (verified 2026-08-03), so joining vwInventory
     directly would multiply item rows by their location count.
 
-    Note on lead_time: im.EstimatedLeadTime is the benchmark the Lead-Time component
-    needs, and it is EMPTY on every item (verified 2026-07-25). Migrating to ETO does
-    not fix D-04 -- it confirms the benchmark does not exist in this source.
+    The driver is vwEngItemMaster rather than the base table: the view resolves ItemUOM
+    and ItemCategory (integer IDs on tblEngItemMaster) into descriptions, and resolves
+    the preferred supplier to a name.
+
+    Note on lead_time: EstimatedLeadTime is NOT empty, contrary to the 2026-07-25
+    finding -- 844 of 87,237 items carry a value. But only 114 are positive, so 730 are
+    a literal 0, which the evaluator would accept as a real zero-day benchmark. The
+    column is therefore mapped through @item_lead_time (NULLIF ... 0), not read raw.
+    Coverage is still ~0.13%, so Lead-Time remains unscoreable for practically every
+    vendor -- it is now a coverage problem rather than an empty column.
     """
 
     src = cfg["sources"]
