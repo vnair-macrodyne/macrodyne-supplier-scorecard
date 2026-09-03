@@ -277,6 +277,20 @@ def _additive(cfg, dataset):
     )
 
 
+def _months_back(scope, key):
+    """
+    A rolling window length in months, or None.
+
+    Interpolated rather than bound because DATEADD's argument is part of the
+    predicate shape, so it is coerced to an int -- the only value that can reach
+    the statement.
+    """
+
+    months = scope.get(key)
+
+    return int(months) if months else None
+
+
 def _display_arg(cfg):
     """
     The literal argument to ETO's display-name function.
@@ -326,7 +340,10 @@ def build_purchase_order_sql(cfg):
     PO lines at the same grain the Excel extract used: one row per PO detail line.
 
     Receipt figures come from whichever source options.received_qty_source and
-    options.last_receipt_source select. The receiver log is ETO's own basis --
+    options.last_receipt_source select. The quantity choice is academic: probe 5
+    compared pod.Received against rls.SumOfQtyReceived across all 161,398 lines and
+    they agree on every one. The DATE has only one source, since the detail view
+    carries no receipt date at all. The receiver log is ETO's own basis --
     dbo.urpPurchasingLateVendors uses vwReceiverLogSummed.MaxOfDate and
     SumOfQtyReceived, and a live comparison matched it 340/340 on project 230219.
     The PO detail's own Received / LastReceivedDate are kept as additive columns so
@@ -371,6 +388,15 @@ def build_purchase_order_sql(cfg):
         # A PO is issued to a vendor when it has been printed or emailed. Verified
         # 2026-08-03: there is no PO status lookup; these two bits are the signal.
         where.append("(poh.PurchasePrinted = 1 OR poh.PurchaseEmailed = 1)")
+
+    po_months = _months_back(scope, "po_months_back")
+
+    if po_months and not scope.get("po_date_from"):
+        # The evaluation period. See docs/ETO_MAPPING.md section 11 -- pooling all
+        # history is not a neutral choice: on-time delivery ran 41% in 2023 and 68%
+        # in 2025, so a lifetime average understates current performance by more
+        # than twenty points and hides the improvement entirely.
+        where.append(f"poh.PurchaseDate >= DATEADD(month, -{po_months}, GETDATE())")
 
     if scope.get("po_date_from"):
         where.append("poh.PurchaseDate >= ?")
@@ -446,6 +472,14 @@ def build_ncr_sql(cfg):
 
     if scope.get("ncr_active_only"):
         where.append("nc.SActive = 1")
+
+    ncr_months = _months_back(scope, "ncr_months_back")
+
+    if ncr_months:
+        # The NCR window must match the PO window or the Quality metric compares a
+        # numerator and a denominator drawn from different periods -- the same
+        # scope mismatch recorded as D-03, reintroduced through the back door.
+        where.append(f"nc.CreationDate >= DATEADD(month, -{ncr_months}, GETDATE())")
 
     where_sql = "\n      AND ".join(where)
     project_sql = _project_filter("nc", scope.get("project_ids"), params)

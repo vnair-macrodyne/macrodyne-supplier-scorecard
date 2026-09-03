@@ -134,12 +134,16 @@ def describe(repo):
         scope = repo.config["scope"]
 
         projects = scope.get("project_ids") or []
-        window = " ".join(
-            part for part in (
-                f"from {scope['po_date_from']}" if scope.get("po_date_from") else "",
-                f"to {scope['po_date_to']}" if scope.get("po_date_to") else "",
-            ) if part
-        )
+
+        if scope.get("po_months_back") and not scope.get("po_date_from"):
+            window = f"rolling {scope['po_months_back']} months"
+        else:
+            window = " ".join(
+                part for part in (
+                    f"from {scope['po_date_from']}" if scope.get("po_date_from") else "",
+                    f"to {scope['po_date_to']}" if scope.get("po_date_to") else "",
+                ) if part
+            )
 
         return (
             f"Source: ETO — {connection['database']} on {connection['server']} "
