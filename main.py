@@ -1,6 +1,9 @@
 import pandas as pd
 
-from src.data_access.excel_repository import ExcelRepository
+from src.data_access.repository_factory import (
+    create_repository,
+    describe
+)
 
 from src.quality.vendor_quality import (
     classify_vendor_completeness,
@@ -50,11 +53,16 @@ from src.reporting.excel_exporter import (
 # REPOSITORY SETUP
 # ==================================================
 
-repo = ExcelRepository(
-    "data/input",
-    "config/column_mappings.json",
-    "config/sources.json"
-)
+# Source selection. Defaults to Excel with exactly the arguments this line
+# carried before, so an unchanged environment behaves as it always did.
+#
+#   python main.py                       Excel (default)
+#   python main.py --source=eto          read from ETO
+#   SCORECARD_SOURCE=eto python main.py  same, via the environment
+
+repo = create_repository()
+
+print(describe(repo))
 
 has_errors = False
 

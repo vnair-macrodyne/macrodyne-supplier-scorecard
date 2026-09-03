@@ -1,0 +1,238 @@
+{
+  "_comment": [
+    "ETO (Total ETO) source configuration for the Vendor Scorecard.",
+    "",
+    "Every column the queries emit is declared here as a SQL expression, so a column",
+    "whose real name differs from the assumption can be corrected in this file WITHOUT",
+    "editing SQL. Entries set to null emit a typed NULL and keep the column contract",
+    "intact -- EXCEPT for the columns listed in EtoRepository.LOAD_BEARING, where a null",
+    "would silently kill a component or empty the whole dataset. Those are refused.",
+    "",
+    "Confidence tags in _confidence below:",
+    "  verified  - named in ETO_SCHEMA_MAP.md or a prior live probe against production",
+    "  likely    - strongly implied by prior discovery, not directly confirmed",
+    "  probe     - assumption; run tools/eto_schema_probe.py and correct before use",
+    "",
+    "Read-only. This pipeline never writes to ETO."
+  ],
+
+  "connection": {
+    "server": "MACRO-ETO-SVR\\SQLEXPRESS",
+    "database": "Macrodyne_Production",
+    "driver": "ODBC Driver 17 for SQL Server",
+    "use_windows_auth": true,
+    "username_env": "ETO_USER",
+    "password_env": "ETO_PWD",
+    "login_timeout_seconds": 15,
+    "query_timeout_seconds": 300
+  },
+
+  "scope": {
+    "_comment": [
+      "PLACEHOLDER VALUES. The Excel prototype scored 23,344 PO lines AFTER cleaning;",
+      "vwPurchaseOrderDetails holds ~160,803. The extract was scoped by something nobody",
+      "has characterised, and these settings are a guess at it -- the not-sent backlog is",
+      "only ~4.5% of headers, so these three filters land nowhere near 23,344.",
+      "",
+      "Set scope_confirmed to true once probe section D has settled the real scope.",
+      "Until then EtoRepository warns on every load.",
+      "",
+      "project_ids: [] means all projects."
+    ],
+    "scope_confirmed": false,
+    "project_ids": [],
+    "po_date_from": null,
+    "po_date_to": null,
+    "issued_only": true,
+    "active_only": true,
+    "exclude_archived_lines": true,
+    "ncr_active_only": true
+  },
+
+  "options": {
+    "last_receipt_source": "receiver_log",
+    "received_qty_source": "receiver_log",
+    "vendor_scope": "supplier_table",
+    "_allowed": {
+      "last_receipt_source": ["receiver_log", "detail"],
+      "received_qty_source": ["receiver_log", "detail"],
+      "vendor_scope": ["supplier_table", "active_suppliers", "purchased_from", "all_companies"]
+    }
+  },
+
+  "sources": {
+    "po_header": "dbo.vwPurchaseOrderHeader",
+    "po_detail": "dbo.vwPurchaseOrderDetails",
+    "receiver_summed": "dbo.vwReceiverLogSummed",
+    "ncr": "dbo.vwNonConformances",
+    "ncr_list": "dbo.vwNonConformanceList",
+    "ncr_costs": "dbo.vwCostingSummed_ByNC",
+    "ncr_origin": "dbo.tlkpNonConformanceOrigin",
+    "item_master": "dbo.tblEngItemMaster",
+    "inventory": "dbo.vwInventory",
+    "company": "dbo.tblCompany",
+    "supplier": "dbo.tblSupplier",
+    "projects": "dbo.tblProjects"
+  },
+
+  "columns": {
+
+    "purchase_orders": {
+      "_aliases": "poh=PO header, pod=PO detail, rls=receiver log summed, im=item master, pj=projects",
+      "_part_note": [
+        "vwPurchaseOrderDetails carries ItemID and ItemDescription, not a part number.",
+        "part_number therefore comes from the item master through the declared FK",
+        "pod.ItemID -> tblEngItemMaster.ItemID, using the SAME expression as the items",
+        "dataset -- so the PO part key and the Item Master part key cannot disagree,",
+        "which is exactly what lead-time matching depends on."
+      ],
+
+      "po_number":         "poh.PurchaseOrderID",
+      "project_number":    "pod.ProjectID",
+      "machine_code":      "pod.SpecID",
+      "ordered_qty":       "pod.PurchaseQty",
+      "part_number":       "im.ItemCompanyID",
+      "po_part_number":    null,
+      "vendor_name":       "poh.CName",
+      "unit_price":        "pod.PurchasePrice",
+      "required_date":     "pod.DateRequired",
+      "revised_date":      "pod.DateRevised",
+      "_receipt_note":     "last_receipt_date and received_qty are overridden at build time by options.last_receipt_source / options.received_qty_source; the values here are the receiver-log defaults",
+      "last_receipt_date": "rls.MaxOfDate",
+      "received_qty":      "rls.SumOfQtyReceived",
+      "uom":               "pod.PurchaseUOM",
+      "order_date":        "poh.PurchaseDate",
+      "extended_value":    "pod.ExtendedPrice",
+      "currency_code":     "poh.PurchaseCurr",
+      "currency_rate":     "poh.PurchaseCurrRate",
+      "supplier_number":   "pod.PurchaseOrderDetailCustom3",
+      "order_number":      null,
+      "receiving_date":    "pod.PurchaseOrderDetailCustom5",
+
+      "_additive": "not consumed by the current pipeline; the migration path depends on them",
+      "supplier_company_id":  "poh.PurchaseSupplierID",
+      "purchase_detail_id":   "pod.PurchaseDetailID",
+      "item_id":              "pod.ItemID",
+      "item_description":     "pod.ItemDescription",
+      "project_name":         "pj.DisplayName",
+      "detail_received_qty":  "pod.Received",
+      "detail_last_receipt":  "pod.LastReceivedDate",
+      "log_received_qty":     "rls.SumOfQtyReceived",
+      "log_last_receipt":     "rls.MaxOfDate"
+    },
+
+    "ncrs": {
+      "_aliases": "nc=vwNonConformances, ncl=vwNonConformanceList, ncc=costing, org=origin lookup, poh=PO header",
+
+      "ncr_number":           "nc.NonConformanceBarcode",
+      "project_number":       "nc.ProjectID",
+      "machine_code":         "nc.SpecID",
+      "title":                "nc.Title",
+      "origin":               "nc.NonConformanceOriginDescription",
+      "total_tasks":          "ncl.Tasks",
+      "outstanding_tasks":    "ncl.Outstanding",
+      "resolved":             "nc.Resolved",
+      "released":             "nc.Released",
+      "source_info":          "nc.SourceDescription",
+      "po_number":            "nc.PurchaseOrderID",
+      "part_number":          "nc.PartNumber",
+      "quantity":             "nc.Quantity",
+      "quantity_rejected":    "nc.QuantityRejected",
+      "interim_action":       "nc.RecommendedInterim",
+      "root_cause":           "nc.NonConformanceRootCause",
+      "corrective_pre_action":"nc.NonConformanceCorrectivePreventiveAction",
+      "ncr_costs":            "ncc.TotalNCCostingValue",
+      "ncr_hours":            null,
+      "target_date":          "nc.NonConformanceCustom5",
+      "date_follow_up":       "nc.QualityFollowUp",
+      "created_date":         "nc.CreationDate",
+      "vendor_name":          "nc.Supplier",
+      "item_id":              "nc.ItemID",
+
+      "_additive": "the exact-key supplier path that replaces name parsing",
+      "supplier_company_id":  "poh.PurchaseSupplierID",
+      "po_supplier_name":     "poh.CName",
+      "ncr_supplier_id":      "nc.SupplierID",
+      "nc_id":                "nc.NonConformanceID",
+      "origin_department":    "org.DepartmentName"
+    },
+
+    "items": {
+      "_aliases": "im=tblEngItemMaster, inv=inventory on-hand rollup",
+      "_note": "part_number here MUST use the same expression as purchase_orders.part_number",
+
+      "part_number":          "im.ItemCompanyID",
+      "description":          "im.ItemDescription",
+      "uom":                  null,
+      "category":             null,
+      "list_price":           null,
+      "revision":             null,
+      "lpp":                  null,
+      "quantity_on_hand":     "inv.QtyOnHand",
+      "preferred_supplier":   null,
+      "supplier_part_number": null,
+      "last_supplier":        null,
+      "manufacturer":         null,
+      "manuf_part_number":    null,
+      "lead_time":            "im.EstimatedLeadTime",
+      "quantity_reserved":    null,
+
+      "_additive": "",
+      "item_id":              "im.ItemID"
+    },
+
+    "vendors": {
+      "_aliases": "co=tblCompany, sup=tblSupplier (always LEFT JOINed so its columns are usable in every scope)",
+
+      "company_id":     "co.CompanyID",
+      "vendor_name":    "co.CName",
+      "address_line_1": "co.CAddress1",
+      "address_line_2": "co.CAddress2",
+      "city":           "co.CCity",
+      "state_province": "co.CState",
+      "postal_code":    "co.CZip",
+      "country":        "co.CCountry",
+
+      "_additive": "supplier extension attributes; not consumed today",
+      "supplier_qa_approved": "sup.SupQAApproved",
+      "supplier_terms":       "sup.SupNetTerms",
+      "company_active":       "co.CActive"
+    }
+  },
+
+  "_confidence": {
+    "verified": [
+      "all object names in sources (vwPurchaseOrderHeader 48 cols, vwPurchaseOrderDetails 36 cols)",
+      "poh.PurchaseSupplierID -> tblCompany.CompanyID (declared FK)",
+      "poh.PurchaseOrderID, CName, PurchaseActive, PurchaseDate, BuyerID",
+      "poh / pod: PurchaseCurr, PurchaseCurrRate (on BOTH views; header used here)",
+      "pod.ProjectID, SpecID, PurchaseQty, PurchaseUOM, PurchasePrice, ExtendedPrice",
+      "pod.Received (decimal qty, NOT NULL), DateRequired, DateRevised, ItemID, ItemDescription",
+      "pod.PurchaseOrderDetailCustom3 = 'Supplier #', Custom5 = 'Receiving Date' (<1% populated)",
+      "rls: PurchaseDetailID, SumOfQtyReceived, MaxOfDate",
+      "nc header cols on the view: SpecID (float NOT NULL), ItemID, Quantity, QuantityRejected,",
+      "  RecommendedInterim, QualityFollowUp, Resolved (bit), Released, CreationDate,",
+      "  PurchaseOrderID (nullable), NonConformanceRootCause, NonConformanceCorrectivePreventiveAction",
+      "nc view resolved names: PartNumber, SupplierID/Supplier, CustomerID/Customer,",
+      "  SourceDescription, NonConformanceOriginDescription, SActive, NonConformanceBarcode",
+      "ncl.Tasks, ncl.Outstanding",
+      "NonConformanceCustom5 caption = 'Target Date' (Custom1..8 = 2 text / 2 decimal / 2 datetime / 2 bit)",
+      "tblSupplier: SupNetTerms, SupQAApproved; tblCompany: CActive",
+      "im.EstimatedLeadTime keyed on ItemID - and EMPTY on every item"
+    ],
+    "likely": [
+      "poh.PurchasePrinted / PurchaseEmailed - verified on tblPurchaseOrderHeader, not on the view",
+      "pod.LastReceivedDate",
+      "co.CAddress1/CAddress2/CCity/CState/CZip/CCountry (the Excel export used these names;",
+      "  note ETO's own urpNonConformanceSupplierImpact uses 'CompanyCity' via a display UDF)",
+      "inv.QtyOnHand aggregated per ItemID from vwInventory"
+    ],
+    "probe": [
+      "im.ItemCompanyID as the item number - LOAD-BEARING: drives part_number on BOTH datasets",
+      "im.ItemDescription",
+      "item master: uom, category, list_price, revision, lpp, preferred_supplier,",
+      "  supplier_part_number, last_supplier, manufacturer, manuf_part_number, quantity_reserved",
+      "po_part_number, order_number, ncr_hours - none is consumed today"
+    ]
+  }
+}
