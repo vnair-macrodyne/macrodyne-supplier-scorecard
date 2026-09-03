@@ -16,7 +16,6 @@
     "",
     "Read-only. This pipeline never writes to ETO."
   ],
-
   "connection": {
     "server": "MACRO-ETO-SVR\\SQLEXPRESS",
     "database": "Macrodyne_Production",
@@ -27,7 +26,6 @@
     "login_timeout_seconds": 15,
     "query_timeout_seconds": 300
   },
-
   "scope": {
     "_comment": [
       "UNRESOLVED. The probe proved no combination of active / archived / issued explains",
@@ -53,18 +51,31 @@
     "exclude_archived_lines": true,
     "ncr_active_only": true
   },
-
   "options": {
     "last_receipt_source": "receiver_log",
     "received_qty_source": "receiver_log",
     "vendor_scope": "supplier_table",
     "_allowed": {
-      "last_receipt_source": ["receiver_log", "detail"],
-      "received_qty_source": ["receiver_log", "detail"],
-      "vendor_scope": ["supplier_table", "active_suppliers", "purchased_from", "all_companies"]
-    }
+      "last_receipt_source": [
+        "receiver_log",
+        "detail"
+      ],
+      "received_qty_source": [
+        "receiver_log",
+        "detail"
+      ],
+      "vendor_scope": [
+        "supplier_table",
+        "active_suppliers",
+        "purchased_from",
+        "all_companies"
+      ],
+      "display_name_mode": [
+        1
+      ]
+    },
+    "display_name_mode": 1
   },
-
   "sources": {
     "po_header": "dbo.vwPurchaseOrderHeader",
     "po_detail": "dbo.vwPurchaseOrderDetails",
@@ -78,69 +89,66 @@
     "inventory": "dbo.vwInventory",
     "company": "dbo.tblCompany",
     "supplier": "dbo.tblSupplier",
-    "projects": "dbo.vwProjects"
+    "projects": "dbo.vwProjects",
+    "company_display": "dbo.udfCompanyRetrieveDisplayNames"
   },
-
   "columns": {
-
     "purchase_orders": {
       "_aliases": "poh=PO header, pod=PO detail, rls=receiver log summed, co=company, sup=supplier, pj=projects",
       "_vendor_note": [
-        "THE SINGLE MOST IMPORTANT LINE IN THIS FILE.",
+        "RESOLVED by probe 2. dbo.udfCompanyRetrieveDisplayNames(1) is callable and its",
+        "'Preferred' column is ETO's own display name -- exactly the string the Excel",
+        "extract carried. @supplier_display_name reads it, falling back to a rebuild only",
+        "if a company has no row in the function.",
         "",
-        "vwPurchaseOrderHeader.CName is the CLEAN company name -- 'Bluewater Heater'.",
-        "The Excel extract's Supplier column was the DECORATED display name --",
-        "'Bluewater Heater [Oldcastle] (Approved)' -- and the scorecard parses the city",
-        "out of those brackets to form half of its grain.",
+        "Do NOT map vendor_name to poh.CName: that is the CLEAN name, and the scorecard",
+        "parses a city out of the brackets the display name adds. poh.CName would give",
+        "every vendor a NULL location, collapse the grain to (name, None) and match zero",
+        "NCRs -- silently.",
         "",
-        "Only 1 of 1,701 supplier records has a bracket in tblCompany.CName, so the",
-        "decoration is applied by ETO's display layer, not stored. Feeding poh.CName",
-        "straight through would give every vendor a NULL location, collapse the grain,",
-        "and match zero NCRs -- silently.",
-        "",
-        "@supplier_display_name rebuilds the decorated string. Probe 2 verifies it",
-        "character-for-character against nc.Supplier before this is trusted."
+        "A hand-rebuild is close but wrong: it matched 571/578 NCR suppliers and 957/971",
+        "receiver-log suppliers. The suffix is a STATUS, not a boolean -- 'Samco Machinery",
+        "[Toronto] (Inactive)' is not '(Approved)' and not blank."
       ],
-
-      "po_number":         "poh.PurchaseOrderID",
-      "project_number":    "pod.ProjectID",
-      "machine_code":      "pod.SpecID",
-      "ordered_qty":       "pod.PurchaseQty",
-      "part_number":       "pod.ItemCompanyID",
-      "po_part_number":    "pod.PurchaseSupplierItem",
-      "vendor_name":       "@supplier_display_name",
-      "unit_price":        "pod.PurchasePrice",
-      "required_date":     "pod.DateRequired",
-      "revised_date":      "pod.DateRevised",
-      "_receipt_note":     "last_receipt_date and received_qty are overridden at build time by options.last_receipt_source / options.received_qty_source; the values here are the receiver-log defaults. vwPurchaseOrderDetails has NO LastReceivedDate column -- the 'detail' option uses pod.Received for quantity and has no date, so receiver_log is the only complete source.",
+      "po_number": "poh.PurchaseOrderID",
+      "project_number": "pod.ProjectID",
+      "machine_code": "pod.SpecID",
+      "ordered_qty": "pod.PurchaseQty",
+      "part_number": "pod.ItemCompanyID",
+      "po_part_number": "pod.PurchaseSupplierItem",
+      "vendor_name": "@supplier_display_name",
+      "unit_price": "pod.PurchasePrice",
+      "required_date": "pod.DateRequired",
+      "revised_date": "pod.DateRevised",
+      "_receipt_note": "last_receipt_date and received_qty are overridden at build time by options.last_receipt_source / options.received_qty_source; the values here are the receiver-log defaults. vwPurchaseOrderDetails has NO LastReceivedDate column -- the 'detail' option uses pod.Received for quantity and has no date, so receiver_log is the only complete source.",
       "last_receipt_date": "rls.MaxOfDate",
-      "received_qty":      "rls.SumOfQtyReceived",
-      "uom":               "pod.PurchaseUOM",
-      "order_date":        "poh.PurchaseDate",
-      "extended_value":    "pod.ExtendedPrice",
-      "currency_code":     "poh.PurchaseCurr",
-      "currency_rate":     "poh.PurchaseCurrRate",
-      "supplier_number":   "pod.PurchaseOrderDetailCustom3",
-      "order_number":      "pod.OrderNumber",
-      "receiving_date":    "pod.PurchaseOrderDetailCustom5",
-
+      "received_qty": "rls.SumOfQtyReceived",
+      "uom": "pod.PurchaseUOM",
+      "order_date": "poh.PurchaseDate",
+      "extended_value": "pod.ExtendedPrice",
+      "currency_code": "poh.PurchaseCurr",
+      "currency_rate": "poh.PurchaseCurrRate",
+      "supplier_number": "pod.PurchaseOrderDetailCustom3",
+      "order_number": "pod.OrderNumber",
+      "receiving_date": "pod.PurchaseOrderDetailCustom5",
       "_additive": "not consumed by the current pipeline; the migration path depends on them",
-      "supplier_company_id":  "poh.PurchaseSupplierID",
-      "supplier_clean_name":  "poh.CName",
-      "supplier_city":        "co.CCity",
+      "supplier_company_id": "poh.PurchaseSupplierID",
+      "supplier_clean_name": "poh.CName",
+      "supplier_city": "co.CCity",
       "supplier_qa_approved": "sup.SupQAApproved",
-      "purchase_detail_id":   "pod.PurchaseDetailID",
-      "item_id":              "pod.ItemID",
-      "item_description":     "pod.ItemDescription",
-      "supplier_item_desc":   "pod.PurchaseSupplierDescription",
-      "project_name":         "pj.DisplayName",
-      "project_customer":     "pj.CName",
-      "remedy_ncr_id":        "pod.NonConformanceID",
-      "detail_received_qty":  "pod.Received",
-      "log_received_qty":     "rls.SumOfQtyReceived",
-      "log_last_receipt":     "rls.MaxOfDate"
+      "purchase_detail_id": "pod.PurchaseDetailID",
+      "item_id": "pod.ItemID",
+      "item_description": "pod.ItemDescription",
+      "supplier_item_desc": "pod.PurchaseSupplierDescription",
+      "project_name": "pj.DisplayName",
+      "project_customer": "pj.CName",
+      "remedy_ncr_id": "pod.NonConformanceID",
+      "detail_received_qty": "pod.Received",
+      "log_received_qty": "rls.SumOfQtyReceived",
+      "log_last_receipt": "rls.MaxOfDate",
+      "_additive_display": "supplier_name_no_status is the same string without the status suffix; a supplier moving Approved -> Inactive changes the grain key otherwise",
+      "supplier_name_no_status": "@supplier_name_no_status"
     },
-
     "ncrs": {
       "_aliases": "nc=vwNonConformances, ncl=vwNonConformanceList, ncc=costing, org=origin lookup, poh=PO header",
       "_note": [
@@ -152,48 +160,46 @@
         "QualityFollowUp is nvarchar, not a date, so it cannot fill date_follow_up.",
         "It ships as an additive text column instead of being silently coerced to NaT."
       ],
-
-      "ncr_number":           "nc.NonConformanceBarcode",
-      "project_number":       "nc.ProjectID",
-      "machine_code":         "nc.SpecID",
-      "title":                "nc.Title",
-      "origin":               "nc.NonConformanceOriginDescription",
-      "total_tasks":          "ncl.Tasks",
-      "outstanding_tasks":    "ncl.Outstanding",
-      "resolved":             "nc.Resolved",
-      "released":             "nc.Released",
-      "source_info":          "nc.SourceDescription",
-      "po_number":            "nc.PurchaseOrderID",
-      "part_number":          "nc.PartNumber",
-      "quantity":             "nc.Quantity",
-      "quantity_rejected":    "nc.QuantityRejected",
-      "interim_action":       "nc.RecommendedInterim",
-      "root_cause":           "nc.NonConformanceRootCause",
-      "corrective_pre_action":"nc.NonConformanceCorrectivePreventiveAction",
-      "ncr_costs":            "ncc.TotalNCCostingValue",
-      "ncr_hours":            "ncc.TotalHours",
-      "target_date":          "nc.NonConformanceCustom5",
-      "date_follow_up":       null,
-      "created_date":         "nc.CreationDate",
-      "vendor_name":          "nc.Supplier",
-      "item_id":              "nc.ItemID",
-
+      "ncr_number": "nc.NonConformanceBarcode",
+      "project_number": "nc.ProjectID",
+      "machine_code": "nc.SpecID",
+      "title": "nc.Title",
+      "origin": "nc.NonConformanceOriginDescription",
+      "total_tasks": "ncl.Tasks",
+      "outstanding_tasks": "ncl.Outstanding",
+      "resolved": "nc.Resolved",
+      "released": "nc.Released",
+      "source_info": "nc.SourceDescription",
+      "po_number": "nc.PurchaseOrderID",
+      "part_number": "nc.PartNumber",
+      "quantity": "nc.Quantity",
+      "quantity_rejected": "nc.QuantityRejected",
+      "interim_action": "nc.RecommendedInterim",
+      "root_cause": "nc.NonConformanceRootCause",
+      "corrective_pre_action": "nc.NonConformanceCorrectivePreventiveAction",
+      "ncr_costs": "ncc.TotalNCCostingValue",
+      "ncr_hours": "ncc.TotalHours",
+      "target_date": "nc.NonConformanceCustom5",
+      "date_follow_up": null,
+      "created_date": "nc.CreationDate",
+      "vendor_name": "nc.Supplier",
+      "item_id": "nc.ItemID",
       "_additive": "the exact-key supplier path that replaces name parsing",
-      "supplier_company_id":  "nc.SupplierID",
-      "po_supplier_company":  "poh.PurchaseSupplierID",
-      "po_supplier_name":     "poh.CName",
-      "supplier_display_name":"@supplier_display_name",
-      "quality_follow_up":    "nc.QualityFollowUp",
-      "created_date_only":    "ncl.CreationDate_DateOnly",
-      "ncr_description":      "nc.NonConformanceDescription",
-      "part_description":     "nc.PartDescription",
-      "customer_name":        "nc.Customer",
-      "nc_id":                "nc.NonConformanceID",
-      "origin_department":    "org.DepartmentName",
-      "ncr_labour_hours":     "ncc.TotalHours",
-      "ncr_purchased_cost":   "ncc.PurchasedCostingValue"
+      "supplier_company_id": "nc.SupplierID",
+      "po_supplier_company": "poh.PurchaseSupplierID",
+      "po_supplier_name": "poh.CName",
+      "supplier_display_name": "@supplier_display_name",
+      "quality_follow_up": "nc.QualityFollowUp",
+      "created_date_only": "ncl.CreationDate_DateOnly",
+      "ncr_description": "nc.NonConformanceDescription",
+      "part_description": "nc.PartDescription",
+      "customer_name": "nc.Customer",
+      "nc_id": "nc.NonConformanceID",
+      "origin_department": "org.DepartmentName",
+      "ncr_labour_hours": "ncc.TotalHours",
+      "ncr_purchased_cost": "ncc.PurchasedCostingValue",
+      "supplier_name_no_status": "@supplier_name_no_status"
     },
-
     "items": {
       "_aliases": "im=vwEngItemMaster, inv=inventory on-hand rollup",
       "_note": [
@@ -207,56 +213,51 @@
         "read would feed 730 zero-day benchmarks into the Lead-Time component and grade",
         "every line against them as late."
       ],
-
-      "part_number":          "im.ItemCompanyID",
-      "description":          "im.ItemDescription",
-      "uom":                  "im.UOMDescription",
-      "category":             "im.CategoryDescription",
-      "list_price":           "im.ItemListCost",
-      "revision":             "im.ItemRevNumber",
-      "lpp":                  "im.ItemLastCost",
-      "quantity_on_hand":     "inv.QtyOnHand",
-      "preferred_supplier":   "im.PreferredSupplier",
+      "part_number": "im.ItemCompanyID",
+      "description": "im.ItemDescription",
+      "uom": "im.UOMDescription",
+      "category": "im.CategoryDescription",
+      "list_price": "im.ItemListCost",
+      "revision": "im.ItemRevNumber",
+      "lpp": "im.ItemLastCost",
+      "quantity_on_hand": "inv.QtyOnHand",
+      "preferred_supplier": "im.PreferredSupplier",
       "supplier_part_number": "im.SupplierPartNumber",
-      "last_supplier":        null,
-      "manufacturer":         "im.Manufacturer",
-      "manuf_part_number":    "im.ManufacturerPartNumber",
-      "lead_time":            "@item_lead_time",
-      "quantity_reserved":    null,
-
+      "last_supplier": null,
+      "manufacturer": "im.Manufacturer",
+      "manuf_part_number": "im.ManufacturerPartNumber",
+      "lead_time": "@item_lead_time",
+      "quantity_reserved": null,
       "_additive": "",
-      "item_id":                  "im.ItemID",
-      "raw_lead_time":            "im.EstimatedLeadTime",
-      "preferred_supplier_id":    "im.PreferredSupplierCompanyID",
+      "item_id": "im.ItemID",
+      "raw_lead_time": "im.EstimatedLeadTime",
+      "preferred_supplier_id": "im.PreferredSupplierCompanyID",
       "last_supplier_company_id": "im.LastSupplierCompanyID",
-      "item_reserved_flag":       "im.ItemReserved",
-      "obsolete":                 "im.Obsolete",
-      "long_lead_flag":           "im.PartCustom7",
-      "oversize_flag":            "im.PartCustom8"
+      "item_reserved_flag": "im.ItemReserved",
+      "obsolete": "im.Obsolete",
+      "long_lead_flag": "im.PartCustom7",
+      "oversize_flag": "im.PartCustom8"
     },
-
     "vendors": {
       "_aliases": "co=tblCompany, sup=tblSupplier (always LEFT JOINed so its columns are usable in every scope)",
-
-      "company_id":     "co.CompanyID",
-      "vendor_name":    "co.CName",
+      "company_id": "co.CompanyID",
+      "vendor_name": "co.CName",
       "address_line_1": "co.CAddress1",
       "address_line_2": "co.CAddress2",
-      "city":           "co.CCity",
+      "city": "co.CCity",
       "state_province": "co.CState",
-      "postal_code":    "co.CZip",
-      "country":        "co.CCountry",
-
+      "postal_code": "co.CZip",
+      "country": "co.CCountry",
       "_additive": "supplier extension attributes; not consumed today",
       "supplier_display_name": "@supplier_display_name",
-      "supplier_qa_approved":  "sup.SupQAApproved",
-      "supplier_terms":        "sup.SupNetTerms",
-      "supplier_fob":          "sup.SupFOB",
-      "supplier_currency":     "sup.DefaultCurrName",
-      "company_active":        "co.CActive"
+      "supplier_qa_approved": "sup.SupQAApproved",
+      "supplier_terms": "sup.SupNetTerms",
+      "supplier_fob": "sup.SupFOB",
+      "supplier_currency": "sup.DefaultCurrName",
+      "company_active": "co.CActive",
+      "supplier_name_no_status": "@supplier_name_no_status"
     }
   },
-
   "_confidence": {
     "verified_by_probe_2026_09_03": [
       "every object in sources exists; vwEngItemMaster (54 cols) and vwProjects (41 cols)",
@@ -274,11 +275,10 @@
       "vwCostingSummed_ByNC carries TotalHours -- resolves ncr_hours",
       "tblCompany: CAddress1/2, CCity, CState, CZip, CCountry, CActive all present",
       "tblSupplier: SupNetTerms, SupFOB, SupQAApproved, DefaultCurrName",
-      "EstimatedLeadTime is NOT empty: 844 of 87,237 populated, 114 positive"
+      "EstimatedLeadTime is NOT empty: 844 of 87,237 populated, 114 positive",
+      "probe 2: udfCompanyRetrieveDisplayNames(1) callable; Preferred = ETO's display name"
     ],
     "likely": [
-      "@supplier_display_name reconstruction -- matches the observed shape exactly but is",
-      "  not yet proven character-for-character; probe 2 settles it",
       "im.CName on vwEngItemMaster is the last supplier's name (left unmapped until proven)"
     ],
     "not_available_in_eto": [

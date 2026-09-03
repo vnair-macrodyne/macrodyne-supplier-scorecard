@@ -121,36 +121,49 @@ _DEFAULT_NULL_TYPE = "nvarchar(255)"
 
 DERIVED = {
 
-    # ETO's display name for a supplier.
+    # ETO's display name for a supplier -- taken from ETO's own function.
     #
     # vwPurchaseOrderHeader.CName is the CLEAN company name ("Bluewater Heater").
     # The Excel extract carried the DECORATED display name
     # ("Bluewater Heater [Oldcastle] (Approved)"), and vendor_matcher parses the
-    # city out of those brackets to form half of the scorecard's grain.
+    # city out of those brackets to form half of the scorecard's grain. Feeding
+    # poh.CName through unchanged would give every vendor a NULL location, collapse
+    # the grain, and match zero NCRs -- silently.
     #
-    # The decoration is not stored: only 1 of 1,701 supplier rows has a bracket in
-    # tblCompany.CName. ETO applies it in the display layer, which is why
-    # vwNonConformances.Supplier and vwReceiverLog.Supplier show it and the PO
-    # header view does not.
+    # Probe 2 established two things:
     #
-    # Feeding poh.CName through unchanged would give every vendor a NULL location,
-    # collapse the grain from (name, city) to (name, None), and match zero NCRs --
-    # without raising anything. So the string is rebuilt here.
+    #   1. dbo.udfCompanyRetrieveDisplayNames(1) IS callable by the reporting
+    #      account, and its "Preferred" column is exactly the string ETO shows:
+    #      "Macrodyne Technologies Inc. [Concord] (Approved)".
+    #
+    #   2. Rebuilding the string by hand is CLOSE BUT WRONG. A CName + city +
+    #      "(Approved)" reconstruction matched 571 of 578 NCR suppliers and 957 of
+    #      971 receiver-log suppliers. The misses are suppliers whose status is not
+    #      "Approved" -- "Samco Machinery [Toronto] (Inactive)" was rebuilt as
+    #      "Samco Machinery [Toronto]". The suffix is a status, not a boolean.
+    #
+    # So the function is the source and the rebuild is the fallback, in case a
+    # company has no row in it -- a NULL here would make vendor_name null, which
+    # sends the whole line to rejected_purchase_orders.
     "@supplier_display_name": (
-        "(co.CName"
+        "COALESCE(disp.Preferred, co.CName"
         " + CASE WHEN co.CCity IS NULL OR LTRIM(RTRIM(co.CCity)) = ''"
-        " THEN '' ELSE ' [' + co.CCity + ']' END"
-        " + CASE WHEN ISNULL(sup.SupQAApproved, 0) = 1"
-        " THEN ' (Approved)' ELSE '' END)"
+        " THEN '' ELSE ' [' + co.CCity + ']' END)"
     ),
+
+    # The same string without the status suffix: "Name [City]".
+    # Kept because it is what a grain keyed on identity rather than status would
+    # want -- a supplier going Approved -> Inactive changes @supplier_display_name
+    # and would split that vendor into two scorecard rows.
+    "@supplier_name_no_status": "disp.CompanyCityNoStatus",
 
     # Item lead time, with zero treated as "not set".
     #
-    # EstimatedLeadTime is populated on 844 of 87,237 items but positive on only
-    # 114 of those -- 730 items carry a literal 0. The lead-time evaluator accepts
-    # any value >= 0 as a benchmark, so a raw read would judge those lines against
-    # a zero-day promise and mark essentially all of them non-adherent, handing
-    # affected vendors a Lead-Time D on a 15% weight built entirely on unset data.
+    # 844 of 87,237 items carry a value; only 114 are positive, so 730 are a
+    # literal 0. The lead-time evaluator accepts any value >= 0 as a benchmark, so
+    # a raw read would judge those lines against a zero-day promise and mark
+    # essentially all of them non-adherent -- handing affected vendors a Lead-Time
+    # D on a 15% weight built entirely on unset data.
     #
     # A zero here means nobody entered a lead time. NULLIF says so.
     "@item_lead_time": "NULLIF(im.EstimatedLeadTime, 0)",
@@ -263,6 +276,18 @@ def _additive(cfg, dataset):
     )
 
 
+def _display_arg(cfg):
+    """
+    The literal argument to ETO's display-name function.
+
+    It is interpolated rather than bound because a table-valued function's argument
+    is part of the FROM clause, where a parameter is not allowed. It is therefore
+    coerced to an int -- the only value shape that can reach the statement.
+    """
+
+    return int(cfg["options"].get("display_name_mode", 1))
+
+
 def _project_filter(alias, project_ids, params):
     """Optional project scope as bound parameters, never interpolated values."""
 
@@ -310,6 +335,7 @@ def build_purchase_order_sql(cfg):
     src = cfg["sources"]
     scope = cfg["scope"]
     opts = cfg["options"]
+    display_arg = _display_arg(cfg)
     colmap = _columns(cfg, "purchase_orders")
 
     receipt_qty = (
@@ -367,6 +393,8 @@ def build_purchase_order_sql(cfg):
             ON co.CompanyID = poh.PurchaseSupplierID
     LEFT JOIN {src['supplier']} AS sup
             ON sup.CompanyID = poh.PurchaseSupplierID
+    LEFT JOIN {src['company_display']}({display_arg}) AS disp
+            ON disp.CompanyID = poh.PurchaseSupplierID
     LEFT JOIN {src['projects']} AS pj
             ON pj.ProjectID = pod.ProjectID
     WHERE {where_sql}{project_sql}
@@ -407,6 +435,7 @@ def build_ncr_sql(cfg):
 
     src = cfg["sources"]
     scope = cfg["scope"]
+    display_arg = _display_arg(cfg)
     colmap = _columns(cfg, "ncrs")
 
     select_list = _select_list(colmap, NCR_CONTRACT, _additive(cfg, "ncrs"))
@@ -435,6 +464,8 @@ def build_ncr_sql(cfg):
            ON co.CompanyID = nc.SupplierID
     LEFT JOIN {src['supplier']} AS sup
            ON sup.CompanyID = nc.SupplierID
+    LEFT JOIN {src['company_display']}({display_arg}) AS disp
+           ON disp.CompanyID = nc.SupplierID
     WHERE {where_sql}{project_sql}
     """
 
@@ -510,6 +541,7 @@ def build_vendor_sql(cfg):
 
     src = cfg["sources"]
     scope_mode = cfg["options"]["vendor_scope"]
+    display_arg = _display_arg(cfg)
     colmap = _columns(cfg, "vendors")
 
     select_list = _select_list(colmap, VENDOR_CONTRACT, _additive(cfg, "vendors"))
@@ -529,6 +561,8 @@ def build_vendor_sql(cfg):
     FROM {src['company']} AS co
     LEFT JOIN {src['supplier']} AS sup
            ON sup.CompanyID = co.CompanyID
+    LEFT JOIN {src['company_display']}({display_arg}) AS disp
+           ON disp.CompanyID = co.CompanyID
     WHERE {predicates[scope_mode]}
     """
 
