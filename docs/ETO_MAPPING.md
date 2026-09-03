@@ -24,7 +24,9 @@ Every load-bearing column resolved: `PurchaseUOM` on 161,392 of 161,392 lines, `
 
 **Probe 2 then closed the blocking question and narrowed the scope.** `dbo.udfCompanyRetrieveDisplayNames(1)` is callable, and its `Preferred` column is ETO's own display name — so the queries read it rather than rebuilding the string. That mattered: a hand-rebuild matched 571 of 578 NCR suppliers and 957 of 971 receiver-log suppliers, and the misses were suppliers whose status is not "Approved" (`Samco Machinery [Toronto] (Inactive)`). The suffix is a **status**, not a boolean, and a rebuild that assumes otherwise splits those vendors into two scorecard rows.
 
-**Probe 3 then rejected both PO scope candidates — and the way it rejected them is the finding.** Every ETO population sits at 46–49% on-time; the extract is 65.2%. A subset cannot beat the whole population by 16 points, so the difference is the **date basis**, not the population. §11.1.
+**Probe 4 closed the display-name question for good and killed the date-basis theory.** `CompanyCity` matches ETO's own strings **578 of 578** and **971 of 971** — zero mismatches. Day granularity changed nothing in any of nine variants, so ETO's dates carry no times and the prototype's timestamp comparison is equivalent to ETO's `DATEDIFF` — half of open decision #4 is settled. But no date basis reaches the extract's on-time rate either: the best of nine is 53.0% against 65.2%. The vendor extract, meanwhile, is essentially solved — see §11.3.
+
+**Probe 3 rejected both PO scope candidates — and the way it rejected them is the finding.** Every ETO population sits at 46–49% on-time; the extract is 65.2%. A subset cannot beat the whole population by 16 points, so the difference is the **date basis**, not the population. §11.1.
 
 It also solved the NCR extract (a complete dump taken around May 2025, no filter), gave the vendor extract a candidate five rows away, and caught a severe bug of mine: I had read the wrong column from ETO's display-name function. `Preferred` is a **bit**, not a name — the display name is `CompanyCity`. `COALESCE(bit, nvarchar)` coerces rather than fails, so every `vendor_name` would have been the string `"1"`: one vendor row for the entire scorecard, silently. Probe 3 surfaced it as a type error. Fixed.
 
@@ -548,7 +550,7 @@ Moving to ETO is not just a plumbing change. Five of the design document's defec
 |---|---|---|
 | **D-01** vendor identity from free text | `PurchaseSupplierID` → `CompanyID`, a declared FK | **Fixable now.** Both keys ship; switching the grain is a config-and-groupby change. |
 | **D-03** Quality numerator/denominator scope mismatch | NCR → PO → supplier exact key | **Fully fixable — proven.** All 578 supplier-linked NCRs carry a resolvable `SupplierID`; zero have a name without a key. |
-| **D-17** bracket-position parsing bug | no parsing at all | **Gone** with D-01. |
+| **D-17** bracket-position parsing bug | no parsing at all | **Gone** with D-01 — and probe 4 put a number on the damage. `normalize_vendor_name` only tolerates `(Approved)` after the bracketed city; ETO also uses `(Unapproved)` (23 suppliers) and `(Inactive)` (11), and on those the regex fails to match *at all*, leaving the bracket in the name. Those 34 vendors carry a different key than they would as Approved — and their key changes the day someone flips the status. Suppliers with no city keep `(Approved)` in the name for the same reason. |
 | **D-05** no evaluation period | `poh.PurchaseDate` and `nc.CreationDate` are queryable date columns | **Fixable now.** `scope.po_date_from` / `po_date_to` exist; a rolling window is a config value, not a code change. |
 | **D-06** unvalidated `resolved` contract | `bit` with a known type | **Fixed** — the repository normalises the value and raises on anything it cannot map, instead of letting a text value silently zero the component (§7.3). |
 | **D-09** no run history | the `scorecard` schema in `docs/DESIGN.md` §15.3 | Unblocked — persistence has somewhere to live. |
@@ -615,9 +617,24 @@ So the question changes from *which rows* to *which dates*. The likeliest candid
 2. **First receipt rather than last.** `vwReceiverLogSummed.MaxOfDate` is the last receipt. A report showing the first receipt would move every partially-received line earlier, and earlier means more on-time.
 3. **Day granularity.** ETO's own rule is `DATEDIFF(day, need-by, receipt) > 0`; the prototype compares timestamps. A receipt logged later on the need-by date is on-time in ETO and late in the prototype.
 
-`tools/eto_datebasis_probe.py` holds the population at everything and varies all three until one produces ~65%. Only then is it worth re-testing the scopes.
+**Probe 4 tested all three, and none of them works.** Nine combinations, population held at everything:
 
-**This is a better problem to have.** A scope mismatch is a filter nobody wrote down; a date-basis mismatch is a metric definition that two systems disagree on — and that is a business decision with a right answer (open decision #4), not an archaeology exercise.
+| need-by | receipt | eligible | on-time | on-time % |
+|---|---|---|---|---|
+| detail revised only | last | 16,951 | 9,835 | 58.0% |
+| header revised-else-required | first | 154,759 | 82,049 | **53.0%** ← best |
+| detail revised-else-required | last | 152,026 | 74,463 | 49.0% |
+| detail required only | last | 151,839 | 67,174 | 44.2% |
+| **the extract** | | **20,181** | **13,164** | **65.2%** |
+
+Twelve points short at best. Two useful results fell out anyway:
+
+- **Day granularity changes nothing** — identical counts in all nine variants. ETO's dates carry no time component, so the prototype's timestamp comparison and ETO's `DATEDIFF(day, ...)` are equivalent. That half of open decision #4 is settled: there is nothing to decide.
+- **Detail and header need-by dates differ on 27,965 of 161,392 lines** (17%), and the header is NULL on 4,593. Real divergence, but not the explanation.
+
+So the extract matches no scope and no date basis. One dimension remains untested — **time**. Every probe has measured the population pooled across 2018–2026, while the extract dates to about May 2025 (§11.2). If delivery performance improved over those years, a recent slice would sit above the pooled average. `tools/eto_year_probe.py` measures on-time by PO year, which nothing has done yet, and varies the last untested input (`pod.Received` versus the receiver log for deciding fullness).
+
+**If that fails too, the hunt ends** — see §11.4.
 
 ### 11.2 The NCR extract is solved: a dated snapshot
 
@@ -639,11 +656,23 @@ So the NCR extract carries no filter at all. It is `SActive = 1` taken on a date
 
 The supplier table was never a plausible fit: it is *smaller* than the extract and four times less complete (211 incomplete of 1,701 = 12.4%, against the extract's 58 of 1,803 = 3.2%). A population that requires an address explains both the size and the cleanliness at once, since 166 of the 211 incomplete records are missing exactly that.
 
-Probe 4 §D fingerprints it on incompleteness as well as size, which is the test that separates a real match from a coincidence.
+**Probe 4 fingerprinted it on incompleteness as well as size, and it holds:**
+
+| Population | Companies | Incomplete |
+|---|---|---|
+| **`CActive = 1` AND has a mailing address** | **1,808** | **56** |
+| has address (any status) | 1,825 | 57 |
+| `CActive = 1` only | 2,061 | 307 |
+| in `tblSupplier` | 1,701 | 209 |
+| **the extract** | **1,803** | **58** |
+
+Five rows and two incomplete records apart, on two independent measures, with a year of drift in between. That is a match, not a coincidence — a wrong population would miss badly on the incompleteness ratio even when the size looked close, exactly as `tblSupplier` does.
+
+`options.vendor_scope` now defaults to `active_with_address`. **The vendor extract is solved.**
 
 ### 11.4 What this means for the reconciliation
 
-The original plan — reproduce the extract exactly, then diff — survives for items and NCRs and is dead for purchase orders until the date basis is settled.
+The original plan — reproduce the extract exactly, then diff — holds for items, NCRs and vendors. **Three of four datasets are solved.** It is only purchase orders that resist, and after four probes the reasonable conclusion is that they will keep resisting.
 
 The recommendation is to **reconcile ratios rather than absolute counts** on the PO side: on-time percentage, price-stability percentage, NCR rate per PO line. Those are what the scorecard actually grades on, they are comparable across populations, and they will expose a metric-definition difference immediately instead of hiding it inside a row-count gap.
 
@@ -661,7 +690,8 @@ src/data_access/repository_factory.py  source selection + a closing context mana
 tools/eto_schema_probe.py              probe 1 — read-only column and object discovery (RUN)
 tools/eto_scope_probe.py               probe 2 — display name (RUN), and the extract scopes
 tools/eto_scope_fingerprint.py         probe 3 — scope by signature (RUN; ruled both out)
-tools/eto_datebasis_probe.py           probe 4 — which date basis gives the extract's 65% on-time
+tools/eto_datebasis_probe.py           probe 4 — date basis (RUN; none reaches 65%)
+tools/eto_year_probe.py                probe 5 — the last untested dimension: time
 tools/reconcile_sources.py             Excel vs ETO, stage totals + vendor diff
 tools/dao_conformance_check.py         executable proof that the two DAOs are interchangeable
 docs/ETO_MAPPING.md                    this document
@@ -749,15 +779,17 @@ Ordered so each step is verifiable before the next depends on it.
 
 **Step 4 — Probe 3. DONE (2026-09-03).** Both PO scope candidates rejected; NCR extract solved; vendor extract narrowed to one candidate; a severe display-name bug caught and fixed.
 
-**Step 5 — Probe 4, then settle the delivery basis.** Run `tools/eto_datebasis_probe.py`. The PO question is no longer scope but date basis (§11.1). Once a basis reproduces ~65% on-time, re-test the scopes against it — and take the basis itself to the business as open decision #4, because it is a metric definition, not an archaeology result.
+**Step 5 — Probe 4. DONE (2026-09-03).** No date basis reproduces the extract either. Day granularity settled as irrelevant; the vendor extract solved.
 
-**Step 6 — Reconcile.** `python tools/reconcile_sources.py`. Target: stage totals matching, or every difference explained. Expect the vendor diff to show rows only in one source — those are vendor-identity differences, and they are the D-01 evidence.
+**Step 6 — Probe 5, then stop.** Run `tools/eto_year_probe.py`. It measures the one dimension nothing has measured — on-time by PO year — and varies the last untested input. If no year or window reaches ~65% on-time with ~416 vendors, the extract is not reproducible, and §11.4 is the decision that follows.
 
-**Step 7 — Cut over.** Run `python main.py --source=eto`. The workbook should reproduce. Nothing needs editing: the Excel path stays the default, and it remains both the rollback and the regression baseline.
+**Step 7 — Reconcile.** `python tools/reconcile_sources.py`. Target: stage totals matching, or every difference explained. Expect the vendor diff to show rows only in one source — those are vendor-identity differences, and they are the D-01 evidence.
+
+**Step 8 — Cut over.** Run `python main.py --source=eto`. The workbook should reproduce. Nothing needs editing: the Excel path stays the default, and it remains both the rollback and the regression baseline.
 
 Run `python tools/dao_conformance_check.py` first — it takes seconds, needs no database, and fails loudly if anything in the DAO contract has drifted.
 
-**Step 8 — Then improve.** In dependency order, each as its own reviewable change:
+**Step 9 — Then improve.** In dependency order, each as its own reviewable change:
 
 1. Evaluation period (`scope.po_date_from` / `po_date_to`) — D-05, and it makes every later comparison meaningful.
 2. Vendor key → `supplier_company_id` — D-01, D-03, D-17.

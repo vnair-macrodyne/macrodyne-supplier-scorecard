@@ -528,7 +528,9 @@ def build_vendor_sql(cfg):
     tblProjects.CompanyID) and suppliers (via tblPurchaseOrderHeader.PurchaseSupplierID).
     A scope filter is therefore mandatory; without one this returns customers too.
 
-      supplier_table    has a row in tblSupplier -- ETO's own definition of "is a supplier"
+      active_with_address  CActive = 1 and a mailing address -- the closest fit to the
+                           Excel extract on BOTH size and completeness (probe 4)
+      supplier_table       has a row in tblSupplier -- ETO's own definition of "is a supplier"
       active_suppliers  as above, and tblCompany.CActive = 1
       purchased_from    appears as a supplier on at least one PO
       all_companies     no filter -- diagnostic only, do not use for scoring
@@ -548,6 +550,12 @@ def build_vendor_sql(cfg):
     select_list = _select_list(colmap, VENDOR_CONTRACT, _additive(cfg, "vendors"))
 
     predicates = {
+        # Probe 4: 1,808 companies with 56 incomplete, against the extract's
+        # 1,803 with 58. The closest fit on both size and completeness.
+        "active_with_address": (
+            "co.CActive = 1 AND co.CAddress1 IS NOT NULL"
+            " AND LTRIM(RTRIM(co.CAddress1)) <> ''"
+        ),
         "supplier_table": "sup.CompanyID IS NOT NULL",
         "active_suppliers": "sup.CompanyID IS NOT NULL AND co.CActive = 1",
         "purchased_from": (
