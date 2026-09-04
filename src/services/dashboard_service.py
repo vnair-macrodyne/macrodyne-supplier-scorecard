@@ -209,5 +209,12 @@ def get_dashboard_summary():
         "source_description":
             scorecard_data[
                 "source_description"
-            ]
+            ],
+
+        "refreshed_at":
+            scorecard_data[
+                "refreshed_at"
+            ].strftime(
+                "%b %d, %Y %I:%M %p"
+            )
     }

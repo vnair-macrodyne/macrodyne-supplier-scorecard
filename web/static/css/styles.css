@@ -522,3 +522,76 @@ tbody tr:hover {
     margin-top: 18px;
     color: #666;
 }
+
+/* ==================================================
+   DATA SOURCE / REFRESH INFORMATION
+================================================== */
+
+.data-info-bar {
+    display: flex;
+    justify-content: space-between;
+    gap: 30px;
+    background: white;
+    padding: 14px 20px;
+    margin-bottom: 25px;
+    border-radius: 8px;
+    border-left: 4px solid #17365d;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+
+.data-info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+
+.data-info-label {
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: #777;
+}
+
+
+.data-info-value {
+    font-size: 14px;
+    color: #17365d;
+    font-weight: bold;
+}
+
+
+@media screen and (max-width: 700px) {
+
+    .data-info-bar {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+}
+
+/* ==================================================
+   REFRESH DATA BUTTON
+================================================== */
+
+.data-refresh-action {
+    display: flex;
+    align-items: center;
+}
+
+
+.refresh-button {
+    padding: 10px 18px;
+    border: none;
+    border-radius: 5px;
+    background: #17365d;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+
+.refresh-button:hover {
+    background: #102a4a;
+}

@@ -1,5 +1,8 @@
 import pandas as pd
+
+from datetime import datetime
 from functools import lru_cache
+
 
 from src.data_access.repository_factory import (
     create_repository,
@@ -48,6 +51,7 @@ from src.scoring.vendor_scoring import (
 
 @lru_cache(maxsize=1)
 def build_scorecard_data():
+
     """
     Run the Vendor Scorecard calculation pipeline.
 
@@ -69,6 +73,7 @@ def build_scorecard_data():
     # ==================================================
 
     repo = create_repository()
+    refreshed_at = datetime.now().astimezone()
 
     scorecard_rules = load_scorecard_rules(
         "config/scorecard_rules.json"
@@ -410,6 +415,9 @@ def build_scorecard_data():
         "source_description":
             describe(repo),
 
+        "refreshed_at":
+            refreshed_at,
+
         "scorecard_rules":
             scorecard_rules,
 
@@ -434,3 +442,13 @@ def build_scorecard_data():
         "matched_supplier_ncrs":
             matched_supplier_ncrs
     }
+
+def refresh_scorecard_data():
+    """
+    Clear the cached scorecard and rebuild it
+    from the current source data.
+    """
+
+    build_scorecard_data.cache_clear()
+
+    return build_scorecard_data()

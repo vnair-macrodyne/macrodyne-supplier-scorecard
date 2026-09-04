@@ -2,7 +2,9 @@ from flask import (
     Flask,
     render_template,
     request,
-    abort
+    abort,
+    redirect,
+    url_for
 )
 
 from src.services.dashboard_service import (
@@ -16,6 +18,11 @@ from src.services.vendor_service import (
 
 from src.services.data_review_service import (
     get_data_review
+)
+
+
+from src.services.scorecard_service import (
+    refresh_scorecard_data
 )
 
 
@@ -137,6 +144,22 @@ def data_review():
         review=review_data
     )
 
+# ==================================================
+# REFRESH SCORECARD DATA
+# ==================================================
+
+@app.route("/refresh-data", methods=["POST"])
+def refresh_data():
+    """
+    Reload ETO data and rebuild the cached
+    Vendor Scorecard calculations.
+    """
+
+    refresh_scorecard_data()
+
+    return redirect(
+        url_for("dashboard")
+    )
 
 # ==================================================
 # APPLICATION START

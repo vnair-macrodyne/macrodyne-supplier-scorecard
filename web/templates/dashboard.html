@@ -18,6 +18,51 @@ Vendor Scorecard Dashboard
 
 </section>
 
+<section class="data-info-bar">
+
+    <div class="data-info-item">
+
+        <span class="data-info-label">
+            Data Source
+        </span>
+
+        <span class="data-info-value">
+            {{ summary.source_description }}
+        </span>
+
+    </div>
+
+
+    <div class="data-info-item">
+
+        <span class="data-info-label">
+            Last Data Refresh
+        </span>
+
+        <span class="data-info-value">
+            {{ summary.refreshed_at }}
+        </span>
+
+    </div>
+    <div class="data-refresh-action">
+
+        <form
+            method="post"
+            action="{{ url_for('refresh_data') }}"
+        >
+
+            <button
+                type="submit"
+                class="refresh-button"
+            >
+                Refresh Data
+            </button>
+
+        </form>
+
+    </div>
+
+</section>
 
 <section class="cards">
 
