@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 
 from datetime import datetime
@@ -453,9 +454,48 @@ def refresh_scorecard_data():
 
     return build_scorecard_data()
 
+def get_refresh_interval_minutes():
+    """
+    Return the configured automatic refresh interval.
+
+    Environment variable:
+        SCORECARD_REFRESH_MINUTES
+
+    Default:
+        15 minutes
+    """
+
+    value = os.environ.get(
+        "SCORECARD_REFRESH_MINUTES",
+        "15"
+    )
+
+    try:
+        minutes = int(value)
+
+    except ValueError:
+        raise ValueError(
+            "SCORECARD_REFRESH_MINUTES must be "
+            "a whole number."
+        )
+
+    if minutes <= 0:
+        raise ValueError(
+            "SCORECARD_REFRESH_MINUTES must be "
+            "greater than zero."
+        )
+
+    return minutes
+
+
 def get_fresh_scorecard_data(
-    max_age_minutes=15
+    max_age_minutes=None
 ):
+    if max_age_minutes is None:
+
+        max_age_minutes = (
+            get_refresh_interval_minutes()
+    )
     """
     Return cached scorecard data when it is still fresh.
 
