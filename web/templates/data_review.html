@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+
+{% block title %}
+Data Review
+{% endblock %}
+
+
+{% block content %}
+
+<section class="page-header">
+
+    <h2>Data Review</h2>
+
+    <p>
+        Source-data exceptions requiring review
+        before production scorecard use.
+    </p>
+
+</section>
+
+
+<section class="review-summary">
+
+    <div class="card">
+
+        <h3>Vendor Records Requiring Review</h3>
+
+        <div class="metric">
+            {{ review.vendor_review_count }}
+        </div>
+
+    </div>
+
+
+    <div class="card">
+
+        <h3>Unmatched Supplier NCRs</h3>
+
+        <div class="metric">
+            {{ review.unmatched_ncr_count }}
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- ==================================================
+     VENDOR MASTER REVIEW
+================================================== -->
+
+<section class="panel review-panel">
+
+    <h3>Vendor Master Review</h3>
+
+    <p class="section-description">
+        Vendor records with missing required fields
+        or exact duplicate conditions.
+    </p>
+
+
+    <div class="table-container">
+
+        <table>
+
+            <thead>
+
+                <tr>
+
+                    {% for column in review.vendor_review_columns %}
+
+                        <th>
+                            {{
+                                column
+                                | replace("_", " ")
+                                | title
+                            }}
+                        </th>
+
+                    {% endfor %}
+
+                </tr>
+
+            </thead>
+
+
+            <tbody>
+
+                {% for vendor in review.vendor_review_rows %}
+
+                    <tr>
+
+                        {% for column in review.vendor_review_columns %}
+
+                            <td>
+
+                                {% set value = vendor[column] %}
+
+                                {% if value is none or value != value %}
+
+                                    N/A
+
+                                {% else %}
+
+                                    {{ value }}
+
+                                {% endif %}
+
+                            </td>
+
+                        {% endfor %}
+
+                    </tr>
+
+                {% endfor %}
+
+
+                {% if not review.vendor_review_rows %}
+
+                    <tr>
+
+                        <td
+                            colspan="{{ review.vendor_review_columns|length }}"
+                            class="no-results"
+                        >
+                            No vendor records require review.
+                        </td>
+
+                    </tr>
+
+                {% endif %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+
+<!-- ==================================================
+     UNMATCHED NCR REVIEW
+================================================== -->
+
+<section class="panel review-panel">
+
+    <h3>Unmatched Supplier NCRs</h3>
+
+    <p class="section-description">
+        Supplier-linked NCRs that could not be
+        reliably matched to a PO vendor/location.
+    </p>
+
+
+    <div class="table-container">
+
+        <table>
+
+            <thead>
+
+                <tr>
+
+                    {% for column in review.unmatched_ncr_columns %}
+
+                        <th>
+                            {{
+                                column
+                                | replace("_", " ")
+                                | title
+                            }}
+                        </th>
+
+                    {% endfor %}
+
+                </tr>
+
+            </thead>
+
+
+            <tbody>
+
+                {% for ncr in review.unmatched_ncr_rows %}
+
+                    <tr>
+
+                        {% for column in review.unmatched_ncr_columns %}
+
+                            <td>
+
+                                {% set value = ncr[column] %}
+
+                                {% if value is none or value != value %}
+
+                                    N/A
+
+                                {% else %}
+
+                                    {{ value }}
+
+                                {% endif %}
+
+                            </td>
+
+                        {% endfor %}
+
+                    </tr>
+
+                {% endfor %}
+
+
+                {% if not review.unmatched_ncr_rows %}
+
+                    <tr>
+
+                        <td
+                            colspan="{{ review.unmatched_ncr_columns|length }}"
+                            class="no-results"
+                        >
+                            No unmatched supplier NCRs.
+                        </td>
+
+                    </tr>
+
+                {% endif %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+{% endblock %}

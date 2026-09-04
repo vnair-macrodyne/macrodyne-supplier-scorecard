@@ -14,6 +14,10 @@ from src.services.vendor_service import (
     get_vendor_detail
 )
 
+from src.services.data_review_service import (
+    get_data_review
+)
+
 
 # ==================================================
 # FLASK APPLICATION SETUP
@@ -108,6 +112,29 @@ def vendor_detail():
     return render_template(
         "vendor_detail.html",
         vendor=vendor
+    )
+
+
+# ==================================================
+# DATA REVIEW
+# ==================================================
+
+@app.route("/data-review")
+def data_review():
+    """
+    Display source-data quality exceptions
+    requiring analyst review.
+
+    Includes:
+        - vendor records requiring review
+        - unmatched supplier NCRs
+    """
+
+    review_data = get_data_review()
+
+    return render_template(
+        "data_review.html",
+        review=review_data
     )
 
 
