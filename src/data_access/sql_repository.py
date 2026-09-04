@@ -77,6 +77,32 @@ class EtoRepository(VendorScorecardRepository):
     # CONNECTION
     # ==================================================
 
+    def _resolve_auth_mode(self):
+        """
+        Resolve ETO authentication mode.
+
+        ETO_AUTH_MODE may override config/eto.json.
+        Supported values: windows, sql.
+        """
+
+        environment_mode = os.environ.get("ETO_AUTH_MODE")
+
+        if environment_mode:
+            auth_mode = environment_mode.strip().lower()
+
+            if auth_mode not in {"windows", "sql"}:
+                raise ValueError(
+                    "Invalid ETO_AUTH_MODE. Expected 'windows' or 'sql'."
+                )
+
+            return auth_mode
+
+        if self.config["connection"].get("use_windows_auth"):
+            return "windows"
+
+        return "sql"
+
+
     def connect(self):
         """Open a read-only pyodbc connection, or reuse an injected one."""
 
@@ -86,6 +112,7 @@ class EtoRepository(VendorScorecardRepository):
         import pyodbc
 
         conn = self.config["connection"]
+        auth_mode = self._resolve_auth_mode()
 
         parts = [
             f"Driver={{{conn['driver']}}}",
@@ -93,7 +120,7 @@ class EtoRepository(VendorScorecardRepository):
             f"Database={conn['database']}",
         ]
 
-        if conn.get("use_windows_auth"):
+        if auth_mode == "windows":
             parts.append("Trusted_Connection=yes")
         else:
             user = os.environ.get(conn.get("username_env", "ETO_USER"))
