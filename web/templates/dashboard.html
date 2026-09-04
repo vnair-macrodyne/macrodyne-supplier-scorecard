@@ -108,5 +108,132 @@ Vendor Scorecard Dashboard
     </table>
 
 </section>
+<section class="panel grade-distribution-panel">
+
+    <h3>Overall Grade Distribution</h3>
+
+    <p class="section-description">
+        Distribution of vendors receiving a prototype overall grade.
+    </p>
+
+    <div class="grade-distribution">
+
+        <div class="grade-card grade-card-a">
+            <div class="grade-letter">A</div>
+            <div class="grade-count">
+                {{ summary.grade_distribution.A }}
+            </div>
+        </div>
+
+        <div class="grade-card grade-card-b">
+            <div class="grade-letter">B</div>
+            <div class="grade-count">
+                {{ summary.grade_distribution.B }}
+            </div>
+        </div>
+
+        <div class="grade-card grade-card-c">
+            <div class="grade-letter">C</div>
+            <div class="grade-count">
+                {{ summary.grade_distribution.C }}
+            </div>
+        </div>
+
+        <div class="grade-card grade-card-d">
+            <div class="grade-letter">D</div>
+            <div class="grade-count">
+                {{ summary.grade_distribution.D }}
+            </div>
+        </div>
+
+    </div>
+
+</section>
+
+<section class="panel component-coverage-panel">
+
+    <h3>Component Scoring Coverage</h3>
+
+    <p class="section-description">
+        Number of vendor/location records with sufficient
+        data to receive a prototype component score.
+    </p>
+
+
+    <div class="table-container">
+
+        <table>
+
+            <thead>
+
+                <tr>
+                    <th>Component</th>
+                    <th>Scored</th>
+                    <th>N/A</th>
+                    <th>Coverage</th>
+                </tr>
+
+            </thead>
+
+
+            <tbody>
+
+                {% for component in summary.component_coverage %}
+
+                <tr>
+
+                    <td>
+                        {{ component.component }}
+                    </td>
+
+                    <td>
+                        {{ component.scored }}
+                    </td>
+
+                    <td>
+                        {{ component.not_scored }}
+                    </td>
+
+                    <td>
+
+                        <div class="coverage-cell">
+
+                            <div class="coverage-bar">
+
+                                <div
+                                    class="coverage-fill"
+                                    style="width: {{ component.coverage_pct }}%;"
+                                >
+                                </div>
+
+                            </div>
+
+                            <span>
+                                {{ component.coverage_pct }}%
+                            </span>
+
+                        </div>
+
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+
+    <p class="coverage-note">
+        Total vendor/location scorecard records:
+        <strong>
+            {{ summary.total_scorecard_rows }}
+        </strong>
+    </p>
+
+</section>
 
 {% endblock %}

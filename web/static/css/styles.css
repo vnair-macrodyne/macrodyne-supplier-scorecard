@@ -417,3 +417,108 @@ tbody tr:hover {
     }
 
 }
+
+/* ==================================================
+   OVERALL GRADE DISTRIBUTION
+================================================== */
+
+.grade-distribution-panel {
+    margin-top: 30px;
+}
+
+
+.grade-distribution {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+}
+
+
+.grade-card {
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+
+.grade-letter {
+    font-size: 22px;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+
+.grade-count {
+    font-size: 30px;
+    font-weight: bold;
+}
+
+
+.grade-card-a {
+    background: #e2f0d9;
+    color: #548235;
+}
+
+
+.grade-card-b {
+    background: #d9eaf7;
+    color: #17365d;
+}
+
+
+.grade-card-c {
+    background: #fff2cc;
+    color: #bf9000;
+}
+
+
+.grade-card-d {
+    background: #f4cccc;
+    color: #c00000;
+}
+
+
+@media screen and (max-width: 700px) {
+
+    .grade-distribution {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+}
+
+/* ==================================================
+   COMPONENT COVERAGE
+================================================== */
+
+.component-coverage-panel {
+    margin-top: 30px;
+}
+
+
+.coverage-cell {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+
+.coverage-bar {
+    width: 180px;
+    height: 10px;
+    background: #e7e6e6;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+
+.coverage-fill {
+    height: 100%;
+    background: #17365d;
+    border-radius: 10px;
+}
+
+
+.coverage-note {
+    margin-top: 18px;
+    color: #666;
+}
