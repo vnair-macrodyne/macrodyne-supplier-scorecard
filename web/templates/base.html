@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>{% block title %}Vendor Scorecard{% endblock %}</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/styles.css') }}"
+    >
+</head>
+
+<body>
+
+    <header class="topbar">
+        <div>
+            <h1>Macrodyne Vendor Scorecard</h1>
+            <p>Supplier Performance Management</p>
+        </div>
+    </header>
+
+    <nav class="navbar">
+        <a href="{{ url_for('dashboard') }}">
+            Dashboard
+        </a>
+        <a href="{{ url_for('vendors') }}">
+            Vendors
+        </a>
+        <a href="#">Data Review</a>
+    </nav>
+
+    <main class="page-container">
+        {% block content %}
+        {% endblock %}
+    </main>
+
+</body>
+</html>

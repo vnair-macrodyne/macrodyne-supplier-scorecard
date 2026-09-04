@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+
+{% block title %}
+Vendor Scorecard
+{% endblock %}
+
+
+{% block content %}
+
+<section class="page-header">
+
+    <h2>Vendor Scorecard</h2>
+
+    <p>
+        Search and review supplier performance
+        across the five prototype components.
+    </p>
+
+</section>
+
+
+<section class="panel">
+
+    <form
+        method="get"
+        action="{{ url_for('vendors') }}"
+        class="search-form"
+    >
+
+        <input
+            type="text"
+            name="q"
+            value="{{ search_text }}"
+            placeholder="Search vendor or location..."
+        >
+
+        <button type="submit">
+            Search
+        </button>
+
+        {% if search_text %}
+
+            <a
+                href="{{ url_for('vendors') }}"
+                class="clear-link"
+            >
+                Clear
+            </a>
+
+        {% endif %}
+
+    </form>
+
+
+    <p class="result-count">
+        {{ vendors|length }} vendor/location records
+    </p>
+
+
+    <div class="table-container">
+
+        <table>
+
+            <thead>
+
+                <tr>
+                    <th>Vendor</th>
+                    <th>Location</th>
+                    <th>PO Transactions</th>
+
+                    <th>Delivery</th>
+                    <th>Quality</th>
+                    <th>Lead-Time</th>
+                    <th>Responsiveness</th>
+                    <th>Commercial</th>
+
+                    <th>Overall Score</th>
+                    <th>Overall Grade</th>
+                    <th>Status</th>
+                </tr>
+
+            </thead>
+
+
+            <tbody>
+
+                {% for vendor in vendors %}
+
+                <tr>
+
+                    <td>
+                        {{ vendor.vendor_match_name }}
+                    </td>
+
+                    <td>
+                        {{ vendor.vendor_match_city }}
+                    </td>
+
+                    <td>
+                        {{ vendor.po_transaction_count }}
+                    </td>
+
+
+                    <td>
+                        <span class="grade grade-{{ vendor.delivery_prototype_grade }}">
+                            {{ vendor.delivery_prototype_grade }}
+                        </span>
+                    </td>
+
+
+                    <td>
+                        <span class="grade grade-{{ vendor.quality_prototype_grade }}">
+                            {{ vendor.quality_prototype_grade }}
+                        </span>
+                    </td>
+
+
+                    <td>
+                        <span class="grade grade-na">
+                            {{ vendor.lead_time_prototype_grade }}
+                        </span>
+                    </td>
+
+
+                    <td>
+                        <span class="grade grade-{{ vendor.responsiveness_prototype_grade }}">
+                            {{ vendor.responsiveness_prototype_grade }}
+                        </span>
+                    </td>
+
+
+                    <td>
+                        <span class="grade grade-{{ vendor.commercial_prototype_grade }}">
+                            {{ vendor.commercial_prototype_grade }}
+                        </span>
+                    </td>
+
+
+                    <td>
+
+                        {% if vendor.prototype_overall_score == vendor.prototype_overall_score %}
+
+                            {{ "%.1f"|format(vendor.prototype_overall_score) }}
+
+                        {% else %}
+
+                            N/A
+
+                        {% endif %}
+
+                    </td>
+
+
+                    <td>
+                        <span class="grade grade-{{ vendor.prototype_overall_grade }}">
+                            {{ vendor.prototype_overall_grade }}
+                        </span>
+                    </td>
+
+
+                    <td>
+                        {{ vendor.prototype_overall_status }}
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+{% endblock %}

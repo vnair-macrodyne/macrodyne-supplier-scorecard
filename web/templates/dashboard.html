@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}
+Vendor Scorecard Dashboard
+{% endblock %}
+
+
+{% block content %}
+
+<section class="page-header">
+
+    <h2>Vendor Performance Dashboard</h2>
+
+    <p>
+        Prototype dashboard for supplier performance,
+        scoring and data-quality monitoring.
+    </p>
+
+</section>
+
+
+<section class="cards">
+
+    <div class="card">
+        <h3>Total Vendors</h3>
+        <div class="metric">
+            {{ summary.total_vendors }}
+        </div>
+    </div>
+
+
+    <div class="card">
+        <h3>Scored Vendors</h3>
+
+        <div class="metric">
+            {{ summary.scored_vendors }}
+        </div>
+    </div>
+
+
+    <div class="card">
+        <h3>Vendor Review</h3>
+        <div class="metric">
+            {{ summary.vendor_review_count }}
+        </div>
+    </div>
+
+
+    <div class="card">
+        <h3>Unmatched NCRs</h3>
+
+        <div class="metric">
+            {{ summary.unmatched_ncr_count }}
+        </div>
+    </div>
+
+</section>
+
+
+<section class="panel">
+
+    <h3>Scorecard Components</h3>
+
+    <table>
+
+        <thead>
+            <tr>
+                <th>Component</th>
+                <th>Weight</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+
+        <tbody>
+
+            <tr>
+                <td>On-Time Delivery</td>
+                <td>25%</td>
+                <td>Available</td>
+            </tr>
+
+            <tr>
+                <td>Quality / NCR</td>
+                <td>25%</td>
+                <td>Available</td>
+            </tr>
+
+            <tr>
+                <td>Lead-Time Performance</td>
+                <td>15%</td>
+                <td>Limited Data</td>
+            </tr>
+
+            <tr>
+                <td>Responsiveness Proxy</td>
+                <td>15%</td>
+                <td>Available</td>
+            </tr>
+
+            <tr>
+                <td>Commercial Performance</td>
+                <td>20%</td>
+                <td>Available</td>
+            </tr>
+
+        </tbody>
+
+    </table>
+
+</section>
+
+{% endblock %}

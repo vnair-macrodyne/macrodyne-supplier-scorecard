@@ -1,0 +1,186 @@
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f4f6f8;
+    color: #222;
+}
+
+
+.topbar {
+    background: #17365d;
+    color: white;
+    padding: 18px 30px;
+}
+
+
+.topbar h1 {
+    margin: 0;
+}
+
+
+.topbar p {
+    margin: 5px 0 0;
+}
+
+
+.navbar {
+    background: white;
+    padding: 12px 30px;
+    border-bottom: 1px solid #ddd;
+}
+
+
+.navbar a {
+    margin-right: 25px;
+    text-decoration: none;
+    color: #17365d;
+    font-weight: bold;
+}
+
+
+.page-container {
+    padding: 30px;
+}
+
+
+.page-header {
+    margin-bottom: 25px;
+}
+
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+}
+
+
+.card h3 {
+    margin-top: 0;
+    font-size: 16px;
+    color: #555;
+}
+
+
+.metric {
+    font-size: 32px;
+    font-weight: bold;
+    color: #17365d;
+}
+
+
+.panel {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+
+th,
+td {
+    padding: 12px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+}
+
+
+th {
+    background: #17365d;
+    color: white;
+}
+.search-form {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+
+.search-form input {
+    width: 320px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+
+
+.search-form button {
+    padding: 10px 18px;
+    border: none;
+    border-radius: 5px;
+    background: #17365d;
+    color: white;
+    cursor: pointer;
+}
+
+
+.clear-link {
+    display: flex;
+    align-items: center;
+    color: #17365d;
+}
+
+
+.result-count {
+    color: #666;
+}
+
+
+.table-container {
+    overflow-x: auto;
+}
+
+
+.grade {
+    display: inline-block;
+    min-width: 32px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    text-align: center;
+    font-weight: bold;
+}
+
+
+.grade-A {
+    background: #e2f0d9;
+    color: #548235;
+}
+
+
+.grade-B {
+    background: #d9eaf7;
+    color: #17365d;
+}
+
+
+.grade-C {
+    background: #fff2cc;
+    color: #bf9000;
+}
+
+
+.grade-D {
+    background: #f4cccc;
+    color: #c00000;
+}
+
+
+.grade-N\/A,
+.grade-na {
+    background: #e7e6e6;
+    color: #666;
+}
