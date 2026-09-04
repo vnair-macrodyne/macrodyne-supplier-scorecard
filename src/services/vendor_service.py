@@ -1,7 +1,6 @@
 from src.services.scorecard_service import (
-    build_scorecard_data
+    get_fresh_scorecard_data
 )
-
 
 def get_vendor_list(search_text=""):
     """
@@ -10,7 +9,7 @@ def get_vendor_list(search_text=""):
     """
 
     scorecard_data = (
-        build_scorecard_data()
+        get_fresh_scorecard_data()
     )
 
     vendor_summary = (
@@ -131,7 +130,7 @@ def get_vendor_detail(
     """
 
     scorecard_data = (
-        build_scorecard_data()
+        get_fresh_scorecard_data()
     )
 
     vendor_summary = (

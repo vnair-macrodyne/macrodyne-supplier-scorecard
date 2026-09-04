@@ -452,3 +452,42 @@ def refresh_scorecard_data():
     build_scorecard_data.cache_clear()
 
     return build_scorecard_data()
+
+def get_fresh_scorecard_data(
+    max_age_minutes=15
+):
+    """
+    Return cached scorecard data when it is still fresh.
+
+    If the cached data is older than max_age_minutes,
+    clear the cache and rebuild the scorecard from the
+    current source data.
+    """
+
+    scorecard_data = (
+        build_scorecard_data()
+    )
+
+    refreshed_at = (
+        scorecard_data[
+            "refreshed_at"
+        ]
+    )
+
+    now = datetime.now().astimezone()
+
+    age_seconds = (
+        now - refreshed_at
+    ).total_seconds()
+
+    max_age_seconds = (
+        max_age_minutes * 60
+    )
+
+
+    if age_seconds >= max_age_seconds:
+
+        return refresh_scorecard_data()
+
+
+    return scorecard_data

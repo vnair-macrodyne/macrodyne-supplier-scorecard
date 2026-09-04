@@ -1,5 +1,5 @@
 from src.services.scorecard_service import (
-    build_scorecard_data
+    get_fresh_scorecard_data
 )
 
 
@@ -10,7 +10,7 @@ def get_dashboard_summary():
     """
 
     scorecard_data = (
-        build_scorecard_data()
+        get_fresh_scorecard_data()
     )
 
     vendors = (
