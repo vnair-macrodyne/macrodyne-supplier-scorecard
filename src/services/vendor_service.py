@@ -120,3 +120,77 @@ def get_vendor_list(search_text=""):
     return vendor_summary.to_dict(
         orient="records"
     )
+
+def get_vendor_detail(
+    vendor_name,
+    vendor_city
+):
+    """
+    Return one vendor/location scorecard record
+    for the Vendor Detail page.
+    """
+
+    scorecard_data = (
+        build_scorecard_data()
+    )
+
+    vendor_summary = (
+        scorecard_data[
+            "vendor_summary"
+        ]
+        .copy()
+    )
+
+
+    vendor_mask = (
+        vendor_summary[
+            "vendor_match_name"
+        ]
+        .fillna("")
+        .astype(str)
+        .eq(vendor_name)
+    )
+
+
+    city_mask = (
+        vendor_summary[
+            "vendor_match_city"
+        ]
+        .fillna("")
+        .astype(str)
+        .eq(vendor_city)
+    )
+
+
+    matching_rows = (
+        vendor_summary.loc[
+            vendor_mask
+            &
+            city_mask
+        ]
+    )
+
+
+    if matching_rows.empty:
+        return None
+
+
+    vendor = (
+        matching_rows
+        .iloc[0]
+        .copy()
+    )
+
+
+    # Convert pandas missing values to None
+    # so Jinja can display them cleanly.
+    vendor = (
+        vendor.where(
+            vendor.notna(),
+            None
+        )
+        .to_dict()
+    )
+
+
+    return vendor

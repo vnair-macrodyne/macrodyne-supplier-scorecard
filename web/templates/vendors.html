@@ -14,13 +14,17 @@ Vendor Scorecard
 
     <p>
         Search and review supplier performance
-        across the five prototype components.
+        across the five prototype scorecard components.
     </p>
 
 </section>
 
 
 <section class="panel">
+
+    <!-- ============================================
+         SEARCH
+    ============================================= -->
 
     <form
         method="get"
@@ -39,6 +43,7 @@ Vendor Scorecard
             Search
         </button>
 
+
         {% if search_text %}
 
             <a
@@ -53,10 +58,21 @@ Vendor Scorecard
     </form>
 
 
+    <!-- ============================================
+         RESULT COUNT
+    ============================================= -->
+
     <p class="result-count">
-        {{ vendors|length }} vendor/location records
+
+        {{ vendors|length }}
+        vendor/location records
+
     </p>
 
+
+    <!-- ============================================
+         VENDOR SCORECARD TABLE
+    ============================================= -->
 
     <div class="table-container">
 
@@ -65,19 +81,47 @@ Vendor Scorecard
             <thead>
 
                 <tr>
+
                     <th>Vendor</th>
+
                     <th>Location</th>
-                    <th>PO Transactions</th>
 
-                    <th>Delivery</th>
-                    <th>Quality</th>
-                    <th>Lead-Time</th>
-                    <th>Responsiveness</th>
-                    <th>Commercial</th>
+                    <th>
+                        PO Transactions
+                    </th>
 
-                    <th>Overall Score</th>
-                    <th>Overall Grade</th>
-                    <th>Status</th>
+                    <th>
+                        Delivery
+                    </th>
+
+                    <th>
+                        Quality
+                    </th>
+
+                    <th>
+                        Lead-Time
+                    </th>
+
+                    <th>
+                        Responsiveness
+                    </th>
+
+                    <th>
+                        Commercial
+                    </th>
+
+                    <th>
+                        Overall Score
+                    </th>
+
+                    <th>
+                        Overall Grade
+                    </th>
+
+                    <th>
+                        Status
+                    </th>
+
                 </tr>
 
             </thead>
@@ -89,59 +133,192 @@ Vendor Scorecard
 
                 <tr>
 
-                    <td>
-                        {{ vendor.vendor_match_name }}
-                    </td>
+                    <!-- ==================================
+                         VENDOR NAME / DETAIL LINK
+                    =================================== -->
 
                     <td>
-                        {{ vendor.vendor_match_city }}
+
+                        <a
+                            class="vendor-link"
+                            href="{{ url_for(
+                                'vendor_detail',
+                                vendor=vendor.vendor_match_name,
+                                city=vendor.vendor_match_city
+                            ) }}"
+                        >
+
+                            {{ vendor.vendor_match_name }}
+
+                        </a>
+
                     </td>
 
+
+                    <!-- ==================================
+                         LOCATION
+                    =================================== -->
+
                     <td>
+
+                        {{ vendor.vendor_match_city or "N/A" }}
+
+                    </td>
+
+
+                    <!-- ==================================
+                         PO ACTIVITY
+                    =================================== -->
+
+                    <td>
+
                         {{ vendor.po_transaction_count }}
+
                     </td>
 
 
+                    <!-- ==================================
+                         DELIVERY
+                    =================================== -->
+
                     <td>
-                        <span class="grade grade-{{ vendor.delivery_prototype_grade }}">
-                            {{ vendor.delivery_prototype_grade }}
-                        </span>
+
+                        {% if vendor.delivery_prototype_grade %}
+
+                            <span
+                                class="grade grade-{{ vendor.delivery_prototype_grade }}"
+                            >
+                                {{ vendor.delivery_prototype_grade }}
+                            </span>
+
+                        {% else %}
+
+                            <span class="grade grade-na">
+                                N/A
+                            </span>
+
+                        {% endif %}
+
                     </td>
 
 
+                    <!-- ==================================
+                         QUALITY
+                    =================================== -->
+
                     <td>
-                        <span class="grade grade-{{ vendor.quality_prototype_grade }}">
-                            {{ vendor.quality_prototype_grade }}
-                        </span>
+
+                        {% if vendor.quality_prototype_grade %}
+
+                            <span
+                                class="grade grade-{{ vendor.quality_prototype_grade }}"
+                            >
+                                {{ vendor.quality_prototype_grade }}
+                            </span>
+
+                        {% else %}
+
+                            <span class="grade grade-na">
+                                N/A
+                            </span>
+
+                        {% endif %}
+
                     </td>
 
 
+                    <!-- ==================================
+                         LEAD TIME
+                    =================================== -->
+
                     <td>
-                        <span class="grade grade-na">
-                            {{ vendor.lead_time_prototype_grade }}
-                        </span>
+
+                        {% if vendor.lead_time_prototype_grade %}
+
+                            <span
+                                class="grade grade-{{ vendor.lead_time_prototype_grade }}"
+                            >
+                                {{ vendor.lead_time_prototype_grade }}
+                            </span>
+
+                        {% else %}
+
+                            <span class="grade grade-na">
+                                N/A
+                            </span>
+
+                        {% endif %}
+
                     </td>
 
 
+                    <!-- ==================================
+                         RESPONSIVENESS
+                    =================================== -->
+
                     <td>
-                        <span class="grade grade-{{ vendor.responsiveness_prototype_grade }}">
-                            {{ vendor.responsiveness_prototype_grade }}
-                        </span>
+
+                        {% if vendor.responsiveness_prototype_grade %}
+
+                            <span
+                                class="grade grade-{{ vendor.responsiveness_prototype_grade }}"
+                            >
+                                {{ vendor.responsiveness_prototype_grade }}
+                            </span>
+
+                        {% else %}
+
+                            <span class="grade grade-na">
+                                N/A
+                            </span>
+
+                        {% endif %}
+
                     </td>
 
 
+                    <!-- ==================================
+                         COMMERCIAL
+                    =================================== -->
+
                     <td>
-                        <span class="grade grade-{{ vendor.commercial_prototype_grade }}">
-                            {{ vendor.commercial_prototype_grade }}
-                        </span>
+
+                        {% if vendor.commercial_prototype_grade %}
+
+                            <span
+                                class="grade grade-{{ vendor.commercial_prototype_grade }}"
+                            >
+                                {{ vendor.commercial_prototype_grade }}
+                            </span>
+
+                        {% else %}
+
+                            <span class="grade grade-na">
+                                N/A
+                            </span>
+
+                        {% endif %}
+
                     </td>
 
 
+                    <!-- ==================================
+                         OVERALL SCORE
+                    =================================== -->
+
                     <td>
 
-                        {% if vendor.prototype_overall_score == vendor.prototype_overall_score %}
+                        {% if
+                            vendor.prototype_overall_score
+                            ==
+                            vendor.prototype_overall_score
+                        %}
 
-                            {{ "%.1f"|format(vendor.prototype_overall_score) }}
+                            {{
+                                "%.1f"|format(
+                                    vendor.prototype_overall_score
+                                )
+                            }}
 
                         {% else %}
 
@@ -152,20 +329,64 @@ Vendor Scorecard
                     </td>
 
 
+                    <!-- ==================================
+                         OVERALL GRADE
+                    =================================== -->
+
                     <td>
-                        <span class="grade grade-{{ vendor.prototype_overall_grade }}">
-                            {{ vendor.prototype_overall_grade }}
-                        </span>
+
+                        {% if vendor.prototype_overall_grade %}
+
+                            <span
+                                class="grade grade-{{ vendor.prototype_overall_grade }}"
+                            >
+
+                                {{ vendor.prototype_overall_grade }}
+
+                            </span>
+
+                        {% else %}
+
+                            <span class="grade grade-na">
+                                N/A
+                            </span>
+
+                        {% endif %}
+
                     </td>
 
 
+                    <!-- ==================================
+                         STATUS
+                    =================================== -->
+
                     <td>
+
                         {{ vendor.prototype_overall_status }}
+
                     </td>
 
                 </tr>
 
                 {% endfor %}
+
+
+                {% if not vendors %}
+
+                <tr>
+
+                    <td
+                        colspan="11"
+                        class="no-results"
+                    >
+
+                        No vendor/location records found.
+
+                    </td>
+
+                </tr>
+
+                {% endif %}
 
             </tbody>
 

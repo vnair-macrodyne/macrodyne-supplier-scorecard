@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+
+{% block title %}
+Vendor Detail
+{% endblock %}
+
+
+{% block content %}
+
+<section class="page-header">
+
+    <a
+        href="{{ url_for('vendors') }}"
+        class="back-link"
+    >
+        ← Back to Vendor Scorecard
+    </a>
+
+    <h2>
+        {{ vendor.vendor_match_name }}
+    </h2>
+
+    <p>
+        Location:
+        <strong>
+            {{ vendor.vendor_match_city or "N/A" }}
+        </strong>
+    </p>
+
+</section>
+
+
+<section class="detail-summary">
+
+    <div class="card">
+
+        <h3>Overall Score</h3>
+
+        <div class="metric">
+
+            {% if vendor.prototype_overall_score is not none %}
+
+                {{ "%.1f"|format(
+                    vendor.prototype_overall_score
+                ) }}
+
+            {% else %}
+
+                N/A
+
+            {% endif %}
+
+        </div>
+
+    </div>
+
+
+    <div class="card">
+
+        <h3>Overall Grade</h3>
+
+        <div class="metric">
+
+            {{ vendor.prototype_overall_grade or "N/A" }}
+
+        </div>
+
+    </div>
+
+
+    <div class="card">
+
+        <h3>Scored Components</h3>
+
+        <div class="metric">
+
+            {{ vendor.prototype_scored_component_count }}
+
+        </div>
+
+    </div>
+
+
+    <div class="card">
+
+        <h3>Weight Coverage</h3>
+
+        <div class="metric">
+
+            {{ vendor.prototype_weight_coverage_pct }}%
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<section class="panel">
+
+    <h3>Component Performance</h3>
+
+
+    <div class="table-container">
+
+        <table>
+
+            <thead>
+
+                <tr>
+                    <th>Component</th>
+                    <th>Eligible / Sample</th>
+                    <th>Metric</th>
+                    <th>Score</th>
+                    <th>Grade</th>
+                    <th>Status</th>
+                </tr>
+
+            </thead>
+
+
+            <tbody>
+
+                <tr>
+
+                    <td>
+                        On-Time Delivery
+                    </td>
+
+                    <td>
+                        {{ vendor.delivery_eligible_count }}
+                    </td>
+
+                    <td>
+                        {{ vendor.on_time_delivery_pct
+                           if vendor.on_time_delivery_pct is not none
+                           else "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.delivery_prototype_score
+                           if vendor.delivery_prototype_score is not none
+                           else "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.delivery_prototype_grade or "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.delivery_score_status }}
+                    </td>
+
+                </tr>
+
+
+                <tr>
+
+                    <td>
+                        Quality / NCR
+                    </td>
+
+                    <td>
+                        {{ vendor.quality_eligible_ncr_count }}
+                    </td>
+
+                    <td>
+                        {{ vendor.ncr_rejected_pct
+                           if vendor.ncr_rejected_pct is not none
+                           else "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.quality_prototype_score
+                           if vendor.quality_prototype_score is not none
+                           else "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.quality_prototype_grade or "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.quality_score_status }}
+                    </td>
+
+                </tr>
+
+
+                <tr>
+
+                    <td>
+                        Lead-Time Performance
+                    </td>
+
+                    <td>
+                        {{ vendor.lead_time_eligible_count }}
+                    </td>
+
+                    <td>
+                        {{ vendor.lead_time_adherence_pct
+                           if vendor.lead_time_adherence_pct is not none
+                           else "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.lead_time_prototype_score
+                           if vendor.lead_time_prototype_score is not none
+                           else "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.lead_time_prototype_grade or "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.lead_time_score_status }}
+                    </td>
+
+                </tr>
+
+
+                <tr>
+
+                    <td>
+                        Responsiveness Proxy
+                    </td>
+
+                    <td>
+                        {{ vendor.responsiveness_eligible_ncr_count }}
+                    </td>
+
+                    <td>
+                        {{ vendor.responsiveness_proxy_pct
+                           if vendor.responsiveness_proxy_pct is not none
+                           else "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.responsiveness_prototype_score
+                           if vendor.responsiveness_prototype_score is not none
+                           else "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.responsiveness_prototype_grade or "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.responsiveness_score_status }}
+                    </td>
+
+                </tr>
+
+
+                <tr>
+
+                    <td>
+                        Commercial Performance
+                    </td>
+
+                    <td>
+                        {{ vendor.price_comparison_count }}
+                    </td>
+
+                    <td>
+                        {{ vendor.price_stability_pct
+                           if vendor.price_stability_pct is not none
+                           else "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.commercial_prototype_score
+                           if vendor.commercial_prototype_score is not none
+                           else "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.commercial_prototype_grade or "N/A" }}
+                    </td>
+
+                    <td>
+                        {{ vendor.commercial_score_status }}
+                    </td>
+
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+
+<section class="panel vendor-activity">
+
+    <h3>Vendor Activity</h3>
+
+    <p>
+        <strong>PO Transactions:</strong>
+        {{ vendor.po_transaction_count }}
+    </p>
+
+    <p>
+        <strong>Supplier-Linked NCRs:</strong>
+        {{ vendor.supplier_linked_ncr_count }}
+    </p>
+
+    <p>
+        <strong>Overall Status:</strong>
+        {{ vendor.prototype_overall_status }}
+    </p>
+
+</section>
+
+{% endblock %}
